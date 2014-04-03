@@ -124,6 +124,9 @@ SECTIONS
 	.mrdump ALIGN (0x400): {
 	}
 #endif
+#ifdef CONFIG_DEBUG_RODATA
+	. = ALIGN(1<<SECTION_SHIFT);
+#endif
 	RO_DATA(PAGE_SIZE)
 
 	. = ALIGN(4);
