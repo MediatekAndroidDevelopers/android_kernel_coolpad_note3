@@ -47,25 +47,26 @@ static int __init is_normal_ram(efi_memory_desc_t *md)
 	return 0;
 }
 
-static void __init efi_setup_idmap(void)
+/*
+ * Translate a EFI virtual address into a physical address: this is necessary,
+ * as some data members of the EFI system table are virtually remapped after
+ * SetVirtualAddressMap() has been called.
+ */
+static phys_addr_t efi_to_phys(unsigned long addr)
 {
-	struct memblock_region *r;
 	efi_memory_desc_t *md;
-	u64 paddr, npages, size;
 
-	for_each_memblock(memory, r)
-		create_id_mapping(r->base, r->size, 0);
-
-	/* map runtime io spaces */
 	for_each_efi_memory_desc(&memmap, md) {
-		if (!(md->attribute & EFI_MEMORY_RUNTIME) || is_normal_ram(md))
+		if (!(md->attribute & EFI_MEMORY_RUNTIME))
 			continue;
-		paddr = md->phys_addr;
-		npages = md->num_pages;
-		memrange_efi_to_native(&paddr, &npages);
-		size = npages << PAGE_SHIFT;
-		create_id_mapping(paddr, size, 1);
+		if (md->virt_addr == 0)
+			/* no virtual mapping has been installed by the stub */
+			break;
+		if (md->virt_addr <= addr &&
+		    (addr - md->virt_addr) < (md->num_pages << EFI_PAGE_SHIFT))
+			return md->phys_addr + addr - md->virt_addr;
 	}
+	return addr;
 }
 
 static int __init uefi_init(void)
@@ -320,49 +321,6 @@ void __init efi_init(void)
 	reserve_regions();
 }
 
-void __init efi_idmap_init(void)
-{
-	if (!efi_enabled(EFI_BOOT))
-		return;
-
-	/* boot time idmap_pg_dir is incomplete, so fill in missing parts */
-	efi_setup_idmap();
-	early_memunmap(memmap.map, memmap.map_end - memmap.map);
-}
-
-static int __init remap_region(efi_memory_desc_t *md, void **new)
-{
-	u64 paddr, vaddr, npages, size;
-
-	paddr = md->phys_addr;
-	npages = md->num_pages;
-	memrange_efi_to_native(&paddr, &npages);
-	size = npages << PAGE_SHIFT;
-
-	if (is_normal_ram(md))
-		vaddr = (__force u64)ioremap_cache(paddr, size);
-	else
-		vaddr = (__force u64)ioremap(paddr, size);
-
-	if (!vaddr) {
-		pr_err("Unable to remap 0x%llx pages @ %p\n",
-		       npages, (void *)paddr);
-		return 0;
-	}
-
-	/* adjust for any rounding when EFI and system pagesize differs */
-	md->virt_addr = vaddr + (md->phys_addr - paddr);
-
-	if (uefi_debug)
-		pr_info("  EFI remap 0x%012llx => %p\n",
-			md->phys_addr, (void *)md->virt_addr);
-
-	memcpy(*new, md, memmap.desc_size);
-	*new += memmap.desc_size;
-
-	return 1;
-}
-
 /*
  * Switch UEFI from an identity map to a kernel virtual map
  */
@@ -471,3 +429,47 @@ err_unmap:
 	return -1;
 }
 early_initcall(arm64_enter_virtual_mode);
+
+void __init efi_virtmap_init(void)
+{
+	efi_memory_desc_t *md;
+
+	if (!efi_enabled(EFI_BOOT))
+		return;
+
+	for_each_efi_memory_desc(&memmap, md) {
+		u64 paddr, npages, size;
+		pgprot_t prot;
+
+		if (!(md->attribute & EFI_MEMORY_RUNTIME))
+			continue;
+		if (WARN(md->virt_addr == 0,
+			 "UEFI virtual mapping incomplete or missing -- no entry found for 0x%llx\n",
+			 md->phys_addr))
+			return;
+
+		paddr = md->phys_addr;
+		npages = md->num_pages;
+		memrange_efi_to_native(&paddr, &npages);
+		size = npages << PAGE_SHIFT;
+
+		pr_info("  EFI remap 0x%016llx => %p\n",
+			md->phys_addr, (void *)md->virt_addr);
+
+		/*
+		 * Only regions of type EFI_RUNTIME_SERVICES_CODE need to be
+		 * executable, everything else can be mapped with the XN bits
+		 * set.
+		 */
+		if (!is_normal_ram(md))
+			prot = __pgprot(PROT_DEVICE_nGnRE);
+		else if (md->type == EFI_RUNTIME_SERVICES_CODE)
+			prot = PAGE_KERNEL_EXEC;
+		else
+			prot = PAGE_KERNEL;
+
+		create_pgd_mapping(&efi_mm, paddr, md->virt_addr, size, prot);
+	}
+	set_bit(EFI_VIRTMAP, &efi.flags);
+	early_memunmap(memmap.map, memmap.map_end - memmap.map);
+}
