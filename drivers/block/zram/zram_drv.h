@@ -76,8 +76,9 @@ enum zram_pageflags {
 	ZRAM_RB_NODE,
 	ZRAM_ZSM_NODE,
 	ZRAM_ZSM_DONE_NODE,
-	ZRAM_ZERO = ZRAM_FLAG_SHIFT + 1,
-	ZRAM_ACCESS,	/* page in now accessed */
+	ZRAM_ZERO = ZRAM_FLAG_SHIFT,
+	ZRAM_ACCESS,	/* page is now accessed */
+
 	__NR_ZRAM_PAGEFLAGS,
 };
 #else
