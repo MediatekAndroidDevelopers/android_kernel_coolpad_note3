@@ -1508,10 +1508,18 @@ _priv_get_int(IN struct net_device *prNetDev,
 			wlanQueryDebugCode(prGlueInfo->prAdapter);
 
 			kalMemSet(gucBufDbgCode, '.', sizeof(gucBufDbgCode));
-			if (copy_to_user(prIwReqData->data.pointer, gucBufDbgCode, prIwReqData->data.length))
-				return -EFAULT;
-			else
-				return status;
+
+		        u4BufLen = prIwReqData->data.length;
+
+		        if (prIwReqData->data.length > sizeof(gucBufDbgCode))
+		                u4BufLen = sizeof(gucBufDbgCode);
+
+		        if (copy_to_user(prIwReqData->data.pointer, gucBufDbgCode, u4BufLen)) {
+		                return -EFAULT;
+		        }
+		        else {
+		                return status;
+		        }
 		}
 
 	default:
