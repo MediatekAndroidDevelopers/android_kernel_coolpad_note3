@@ -31,9 +31,16 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 
-#ifdef CONFIG_ARCH_MT6755
+#ifdef CONFIG_ARCH_MT6752
+#include "../misc/mediatek/base/power/mt6752/mt_cpufreq.h"
+#endif
+
+#ifdef CONFIG_ARCH_MT6753
+#include "../misc/mediatek/base/power/mt6735/mt_cpufreq.h"
+#endif
+
+#if (defined CONFIG_ARCH_MT6752) || (defined CONFIG_ARCH_MT6753)
 #include <asm/topology.h>
-#include <../misc/mediatek/base/power/mt6755/mt_cpufreq.h>
 unsigned int hispeed_freq_perf = 0;
 unsigned int min_sample_time_perf = 0;
 #endif
@@ -355,10 +362,10 @@ static void cpufreq_interactive_timer(unsigned long data)
 	unsigned long flags;
 	u64 max_fvtime;
 
-#ifdef CONFIG_ARCH_MT6755
-	int ppb_idx;
+#if (defined CONFIG_ARCH_MT6752) || (defined CONFIG_ARCH_MT6753)
 	/* Default, low power, just make, performance */
 	int freq_idx[4] = {2, 6, 4, 0};
+	int ppb_idx;
 	int min_sample_t[4] = {80, 20, 20, 80};
 #endif
 
@@ -382,11 +389,15 @@ static void cpufreq_interactive_timer(unsigned long data)
 	cpu_load = loadadjfreq / pcpu->policy->cur;
 	tunables->boosted = tunables->boost_val || now < tunables->boostpulse_endtime;
 
-#ifdef CONFIG_ARCH_MT6755
+#if 0 //(defined CONFIG_ARCH_MT6752) || (defined CONFIG_ARCH_MT6753)
 	ppb_idx = mt_cpufreq_get_ppb_state();
 
 	/* Not to modify if L in default mode */
+#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
+	if (ppb_idx == 0 && (arch_get_cluster_id(pcpu->policy->cpu) >= 1) && !mt_cpufreq_get_chip_id_38()) {
+#else
 	if (ppb_idx == 0 && (arch_get_cluster_id(pcpu->policy->cpu) >= 1)) {
+#endif
 		tunables->hispeed_freq = pcpu->freq_table[0].frequency;
 		tunables->min_sample_time = DEFAULT_MIN_SAMPLE_TIME;
 	} else {
@@ -818,7 +829,7 @@ static ssize_t store_hispeed_freq(struct cpufreq_interactive_tunables *tunables,
 		return ret;
 	tunables->hispeed_freq = val;
 
-#ifdef CONFIG_ARCH_MT6755
+#if (defined CONFIG_ARCH_MT6752) || (defined CONFIG_ARCH_MT6753)
 	hispeed_freq_perf = val;
 #endif
 
@@ -861,7 +872,7 @@ static ssize_t store_min_sample_time(struct cpufreq_interactive_tunables
 		return ret;
 	tunables->min_sample_time = val;
 
-#ifdef CONFIG_ARCH_MT6755
+#if (defined CONFIG_ARCH_MT6752) || (defined CONFIG_ARCH_MT6753)
 	min_sample_time_perf = val;
 #endif
 
