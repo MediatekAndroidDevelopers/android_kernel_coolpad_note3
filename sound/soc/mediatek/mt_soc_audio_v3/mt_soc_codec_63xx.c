@@ -96,7 +96,7 @@
 #include "AudDrv_Common_func.h"
 #include "AudDrv_Gpio.h"
 //zhuyifeng
-#include <prj/prj_config.h>
+//#include <prj/prj_config.h>
 
 /* #define AW8736_MODE_CTRL // AW8736 PA output power mode control */
 

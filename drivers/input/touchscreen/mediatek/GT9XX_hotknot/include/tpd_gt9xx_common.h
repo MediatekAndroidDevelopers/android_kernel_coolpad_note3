@@ -42,7 +42,7 @@
 
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
-#include <prj/prj_config.h>
+//#include <prj/prj_config.h>
 #include <linux/jiffies.h>
 
 /* Pre-defined definition */
@@ -59,6 +59,7 @@
 #define TPD_KEYS        {KEY_MENU, KEY_HOMEPAGE, KEY_BACK, KEY_SEARCH}
 #define TPD_KEYS_DIM    {{key_1,50,30},{key_2,50,30},{key_3,50,30},{key_4,50,30}}
 #else
+#define __DRV_LCM_RESOLUTION_HD720_DRT__
 #define TPD_BUTTON_HEIGH        (100)
 #define TPD_BUTTON_WIDTH        (80)
 #define TPD_KEY_COUNT           3

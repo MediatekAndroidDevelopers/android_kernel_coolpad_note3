@@ -31,7 +31,7 @@
 //#include <asm/system.h>
 #include <linux/types.h>
 
-#include <prj/prj_config.h>
+//#include <prj/prj_config.h>
 
 #include "kd_camera_hw.h"
 #include "kd_imgsensor.h"
