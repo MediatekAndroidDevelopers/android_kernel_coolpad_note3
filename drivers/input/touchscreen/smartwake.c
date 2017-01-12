@@ -267,14 +267,15 @@ static bool gesture_is_c(int count)
 		{
 			sum += passed_gestures[i];
 		}
+		
+                if ((sum == LEFT + LEFT_DOWN + DOWN + RIGHT_DOWN + RIGHT) ||
+                        (sum == LEFT_DOWN + DOWN + RIGHT_DOWN + RIGHT) ||
+                        (sum == LEFT + LEFT_DOWN + DOWN + RIGHT_DOWN) ||
+                        (sum == LEFT_DOWN + DOWN + RIGHT_DOWN))
+                {
+                        return true;
+                }
 	}
-        if ((sum == LEFT + LEFT_DOWN + DOWN + RIGHT_DOWN + RIGHT) ||
-                (sum == LEFT_DOWN + DOWN + RIGHT_DOWN + RIGHT) ||
-                (sum == LEFT + LEFT_DOWN + DOWN + RIGHT_DOWN) ||
-                (sum == LEFT_DOWN + DOWN + RIGHT_DOWN))
-        {
-                return true;
-        }
 	return false;
 }
 
@@ -343,7 +344,7 @@ static void check_gesture(void)
                 {
                         key_value = KEY_M;
                 }
-        } else if (key_value == 0) {
+        } else if (gesture_count < 7 && key_value == 0) {
                 if (gesture_is_c(gesture_count))
                 {
                         key_value = KEY_C;
