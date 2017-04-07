@@ -78,7 +78,9 @@ static bool gCmdqTestSecure;
 static cmdqMonitorEventStruct gEventMonitor;
 static cmdqMonitorPollStruct gPollMonitor;
 
+#if 0
 static struct proc_dir_entry *gCmdqTestProcEntry;
+#endif
 
 static int32_t _test_submit_async(cmdqRecHandle handle, TaskStruct **ppTask)
 {
@@ -3569,6 +3571,7 @@ static const struct file_operations cmdq_fops = {
 
 static int __init cmdq_test_init(void)
 {
+#if 0
 	CMDQ_MSG("cmdq_test_init\n");
 
 	/* Mout proc entry for debug */
@@ -3579,17 +3582,19 @@ static int __init cmdq_test_init(void)
 			CMDQ_MSG("cmdq_test_init failed\n");
 		}
 	}
-
+#endif
 	return 0;
 }
 
 static void __exit cmdq_test_exit(void)
 {
+#if 0
 	CMDQ_MSG("cmdq_test_exit\n");
 	if (NULL != gCmdqTestProcEntry) {
 		proc_remove(gCmdqTestProcEntry);
 		gCmdqTestProcEntry = NULL;
 	}
+#endif
 }
 module_init(cmdq_test_init);
 module_exit(cmdq_test_exit);
