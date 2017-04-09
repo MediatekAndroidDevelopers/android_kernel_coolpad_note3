@@ -114,6 +114,14 @@ static const struct i2c_device_id epl_sensor_i2c_id[] = {{EPL_DEV_NAME,0},{}};
 #endif
 //#define POWER_NONE_MACRO MT65XX_POWER_NONE
 
+#ifdef CONFIG_POCKETMOD
+#include <linux/pocket_mod.h>
+#define POCKETMOD_DEBUG         0
+bool epl259x_ps_enabled = false;
+extern bool smartwake_switch;
+#endif
+
+
 struct hwmsen_object *ps_hw, * als_hw;
 static struct epl_sensor_priv *epl_sensor_obj = NULL;
 #if !MTK_LTE
@@ -1557,6 +1565,7 @@ void epl_sensor_enable_ps(int enable)
         }
         else
         {
+
             clear_bit(CMC_BIT_PS, &epld->enable);
 #if PS_DYN_K
             cancel_delayed_work(&epld->dynk_thd_polling_work);
@@ -1565,8 +1574,10 @@ void epl_sensor_enable_ps(int enable)
         }
         epl_sensor_fast_update(epld->client);
         epl_sensor_update_mode(epld->client);
+#ifdef CONFIG_POCKETMOD
+	epl259x_ps_enabled = enable;
+#endif
     }
-
 }
 
 void epl_sensor_enable_als(int enable)
@@ -4081,6 +4092,31 @@ static int ps_enable_nodata(int en)
 
 	return 0;
 }
+
+#ifdef CONFIG_POCKETMOD
+int epl259x_pocket_detection_check(void) {
+	struct epl_sensor_priv *obj = epl_sensor_obj;
+	int err = 0;
+	int prox_value = -1;
+        if (!epl259x_ps_enabled) {
+                ps_enable_nodata(1);
+        }
+        
+	if (obj == NULL) {
+		APS_ERR("pocket_detection_check: epl_sensor_obj is null\n");
+		return 0;
+	}
+
+	err = epl_sensor_read_ps(obj->client);
+	if (err != 0) {
+		APS_ERR("pocket_detection_check: epl_sensor_read_ps failed err=%d\n", err);
+		return 0;
+	}
+	prox_value = epl_sensor.ps.compare_low >> 3;
+	return prox_value == 0 ? 0 : 1; //ignore invalid state for now
+}
+#endif
+
 /*--------------------------------------------------------------------------------*/
 static int ps_set_delay(u64 ns)
 {
