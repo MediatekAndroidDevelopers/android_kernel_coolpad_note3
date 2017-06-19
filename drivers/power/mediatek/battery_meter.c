@@ -3301,7 +3301,6 @@ signed int battery_meter_get_charging_current(void)
 	int ICharging = 0;
 	int ret = 0;
 	int val = 1;
-
 	for (i = 0; i < repeat; i++) {
 		val = 1;	/* set avg times */
 		ret = battery_meter_ctrl(BATTERY_METER_CMD_GET_ADC_V_BAT_SENSE, &val);
