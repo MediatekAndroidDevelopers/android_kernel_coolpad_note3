@@ -1,0 +1,3 @@
+config MTK_LSM6DS3_AUTO
+	bool "lsm6ds3_auto for MediaTek package"
+	default n

@@ -1,0 +1,11 @@
+config MTK_IMGSENSOR
+  bool CONFIG_MTK_IMGSENSOR
+  default n
+  help
+    CONFIG_MTK_IMGSENSOR
+
+config YL_CAM_MODULE_NAME
+  bool CONFIG_YL_CAM_MODULE_NAME
+  default n
+  help
+    CONFIG_YL_CAM_MODULE_NAME

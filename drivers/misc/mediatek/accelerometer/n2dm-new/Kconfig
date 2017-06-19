@@ -1,0 +1,8 @@
+config MTK_N2DM_NEW
+	bool "N2DM for MediaTek package"
+	default n
+	help
+	  It support different accelerometer sensor.
+          If this option is set,
+	  it will support
+          N2DM Accelerometer.
