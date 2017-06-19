@@ -46,7 +46,11 @@ Module.symvers
 /vmlinuz
 /System.map
 /Module.markers
+<<<<<<< HEAD
 out/
+=======
+
+>>>>>>> 37ed981250f232e2766dc366268a38ba926c039a
 #
 # Debian directory (make deb-pkg)
 #
