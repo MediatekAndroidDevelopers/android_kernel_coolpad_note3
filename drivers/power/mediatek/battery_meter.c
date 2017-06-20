@@ -57,9 +57,6 @@ int Enable_FGADC_LOG = 7;
 /* ============================================================ // */
 BATTERY_METER_CONTROL battery_meter_ctrl = NULL;
 
-/* static struct proc_dir_entry *proc_entry_fgadc; */
-static char proc_fgadc_data[32];
-
 kal_bool gFG_Is_Charging = KAL_FALSE;
 signed int g_auxadc_solution = 0;
 unsigned int g_spm_timer = 600;
@@ -3321,7 +3318,6 @@ signed int battery_meter_get_charging_current(void)
 	int ICharging = 0;
 	int ret = 0;
 	int val = 1;
-
 	for (i = 0; i < repeat; i++) {
 		val = 1;	/* set avg times */
 		ret = battery_meter_ctrl(BATTERY_METER_CMD_GET_ADC_V_BAT_SENSE, &val);
@@ -3809,15 +3805,18 @@ signed int battery_meter_get_VSense(void)
 static ssize_t fgadc_log_write(struct file *filp, const char __user *buff,
 			       size_t len, loff_t *data)
 {
-	if (copy_from_user(&proc_fgadc_data, buff, len)) {
+
+	char proc_fgadc_data;
+
+	if ((len <= 0) || copy_from_user(&proc_fgadc_data, buff, 1)) {
 		bm_print(BM_LOG_CRTI, "fgadc_log_write error.\n");
 		return -EFAULT;
 	}
 
-	if (proc_fgadc_data[0] == '1') {
+	if (proc_fgadc_data == '1') {
 		bm_print(BM_LOG_CRTI, "enable FGADC driver log system\n");
 		Enable_FGADC_LOG = BM_LOG_CRTI;
-	} else if (proc_fgadc_data[0] == '2') {
+	} else if (proc_fgadc_data == '2') {
 		bm_print(BM_LOG_CRTI, "enable FGADC driver log system:2\n");
 		Enable_FGADC_LOG = BM_LOG_FULL;
 	} else {

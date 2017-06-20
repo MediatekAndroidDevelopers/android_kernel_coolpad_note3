@@ -123,6 +123,15 @@ static u8 *gpDMABuf_va;
 static u32 gpDMABuf_pa;
 #endif
 
+#ifdef CONFIG_TOUCHSCREEN_SMARTWAKE
+#include <linux/input/smartwake.h>
+#endif
+
+#ifdef CONFIG_POCKETMOD
+#include <linux/pocket_mod.h>
+#endif
+
+//static irqreturn_t tpd_interrupt_handler(int irq, void *dev_id);
 static irqreturn_t tpd_eint_interrupt_handler(void);
 static int touch_event_handler(void *unused);
 static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
@@ -2719,6 +2728,10 @@ static void gtp_esd_check_func(struct work_struct *work)
 static int tpd_history_x = 0, tpd_history_y;
 static void tpd_down(s32 x, s32 y, s32 size, s32 id)
 {
+#if defined CONFIG_POCKETMOD && defined CONFIG_TOUCHSCREEN_SMARTWAKE
+	if (display_off && (device_is_pocketed() == 1))
+	    return;
+#endif
 	if ((!size) && (!id)) {
 		input_report_abs(tpd->dev, ABS_MT_PRESSURE, 100);
 		input_report_abs(tpd->dev, ABS_MT_TOUCH_MAJOR, 100);

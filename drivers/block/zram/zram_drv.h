@@ -76,8 +76,9 @@ enum zram_pageflags {
 	ZRAM_RB_NODE,
 	ZRAM_ZSM_NODE,
 	ZRAM_ZSM_DONE_NODE,
-	ZRAM_ZERO = ZRAM_FLAG_SHIFT + 1,
-	ZRAM_ACCESS,	/* page in now accessed */
+	ZRAM_ZERO = ZRAM_FLAG_SHIFT,
+	ZRAM_ACCESS,	/* page is now accessed */
+
 	__NR_ZRAM_PAGEFLAGS,
 };
 #else
@@ -114,6 +115,7 @@ struct zram_stats {
 	atomic64_t compr_data_size;	/* compressed size of pages stored */
 	atomic64_t num_reads;	/* failed + successful */
 	atomic64_t num_writes;	/* --do-- */
+	atomic64_t num_migrated;	/* no. of migrated object */
 	atomic64_t failed_reads;	/* can happen when memory is too low */
 	atomic64_t failed_writes;	/* can happen when memory is too low */
 	atomic64_t invalid_io;	/* non-page-aligned I/O requests */
@@ -134,24 +136,25 @@ struct zram_meta {
 
 struct zram {
 	struct zram_meta *meta;
-	struct request_queue *queue;
-	struct gendisk *disk;
 	struct zcomp *comp;
-
-	/* Prevent concurrent execution of device init, reset and R/W request */
+	struct gendisk *disk;
+	/* Prevent concurrent execution of device init */
 	struct rw_semaphore init_lock;
+	/*
+	 * the number of pages zram can consume for storing compressed data
+	 */
+	unsigned long limit_pages;
+	int max_comp_streams;
+
+	struct zram_stats stats;
+	atomic_t refcount; /* refcount for zram_meta */
+	/* wait all IO under all of cpu are done */
+	wait_queue_head_t io_done;
 	/*
 	 * This is the limit on amount of *uncompressed* worth of data
 	 * we can store in a disk.
 	 */
 	u64 disksize;	/* bytes */
-	int max_comp_streams;
-	struct zram_stats stats;
-	/*
-	 * the number of pages zram can consume for storing compressed data
-	 */
-	unsigned long limit_pages;
-
 	char compressor[10];
 };
 

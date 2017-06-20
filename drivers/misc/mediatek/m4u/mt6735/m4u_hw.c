@@ -285,6 +285,9 @@ int config_mau(M4U_MAU_STRUCT mau)
 	unsigned int MVAStart = mau.mva;
 	unsigned int MVAEnd = mau.mva + mau.size;
 
+	if (m4u_id == -1 || larb == -1)
+		return -1;
+
 	if (0 != m4u_id)
 		return -1;
 
@@ -1017,9 +1020,13 @@ EXPORT_SYMBOL(smi_common_clock_off);
 int m4u_insert_seq_range(M4U_PORT_ID port, unsigned int MVAStart, unsigned int MVAEnd)
 {
 	int i, free_id = -1;
-	unsigned int m4u_index = m4u_port_2_m4u_id(port);
-	unsigned int m4u_slave_id = m4u_port_2_m4u_slave_id(port);
-	M4U_RANGE_DES_T *pSeq = gM4USeq[m4u_index] + M4U_SEQ_NUM(m4u_index)*m4u_slave_id;
+	int m4u_index = m4u_port_2_m4u_id(port);
+	int m4u_slave_id = m4u_port_2_m4u_slave_id(port);
+	M4U_RANGE_DES_T *pSeq;
+
+	if (m4u_index == -1 || m4u_slave_id == -1)
+		return -1;
+	pSeq = gM4USeq[m4u_index] + M4U_SEQ_NUM(m4u_index) * m4u_slave_id;
 
 	M4ULOG_MID("m4u_insert_seq_range , module:%s, MVAStart:0x%x, MVAEnd:0x%x\n",
 			m4u_get_port_name(port), MVAStart, MVAEnd);
@@ -1096,10 +1103,14 @@ int m4u_invalid_seq_range_by_id(int port, int seq_id)
 {
 	int m4u_index = m4u_port_2_m4u_id(port);
 	int m4u_slave_id = m4u_port_2_m4u_slave_id(port);
-	unsigned long m4u_base = gM4UBaseAddr[m4u_index];
-	M4U_RANGE_DES_T *pSeq = gM4USeq[m4u_index] + M4U_SEQ_NUM(m4u_index)*m4u_slave_id;
+	unsigned long m4u_base;
+	M4U_RANGE_DES_T *pSeq;
 	int ret = 0;
 
+	if (m4u_index == -1 || m4u_slave_id == -1)
+		return -1;
+	m4u_base = gM4UBaseAddr[m4u_index];
+	pSeq = gM4USeq[m4u_index] + M4U_SEQ_NUM(m4u_index) * m4u_slave_id;
 	mutex_lock(&gM4u_seq_mutex);
 	{
 		pSeq[seq_id].Enabled = 0;
@@ -1149,8 +1160,11 @@ static int _m4u_config_port(int port, int virt, int sec, int dis, int dir)
 	int m4u_index = m4u_port_2_m4u_id(port);
 	unsigned long m4u_base = gM4UBaseAddr[m4u_index];
 	unsigned long larb_base;
-	unsigned int larb, larb_port;
+	int larb, larb_port;
 	int ret = 0;
+
+	if (m4u_index == -1)
+			return -1;
 
 	M4ULOG_HIGH("config_port:%s,v%d,s%d\n",
 	m4u_get_port_name(port), virt, sec);
@@ -1169,6 +1183,8 @@ static int _m4u_config_port(int port, int virt, int sec, int dis, int dir)
 		int mmu_en = 0;
 
 		larb = m4u_port_2_larb_id(port);
+		if (larb == -1)
+			return -1;
 		larb_port = m4u_port_2_larb_port(port);
 		larb_base = gLarbBaseAddr[larb];
 
@@ -1212,11 +1228,9 @@ static inline void _m4u_port_clock_toggle(int m4u_index, int larb, int on)
 	if (m4u_index == 0) {
 		start = sched_clock();
 		if (on) {
-			smi_common_clock_on();
 			larb_clock_on(larb);
 		} else {
 			larb_clock_off(larb);
-			smi_common_clock_off();
 		}
 		end = sched_clock();
 
@@ -1243,6 +1257,8 @@ int m4u_config_port(M4U_PORT_STRUCT *pM4uPort) /* native */
 	m4u_index = m4u_port_2_m4u_id(PortID);
 	larb = m4u_port_2_larb_id(PortID);
 
+	if (m4u_index == -1 || larb == -1)
+		return -1;
 	_m4u_port_clock_toggle(m4u_index, larb, 1);
 
 #ifdef M4U_TEE_SERVICE_ENABLE
@@ -1314,6 +1330,8 @@ int m4u_config_port_array(struct m4u_port_array *port_array)
 			unsigned int value;
 
 			larb = m4u_port_2_larb_id(port);
+			if (larb == -1)
+				return -1;
 			larb_port = m4u_port_2_larb_port(port);
 			config_larb[larb] |= (1 << larb_port);
 			value = (!!(port_array->ports[port] && M4U_PORT_ATTR_VIRTUAL))<<larb_port;
@@ -1642,13 +1660,16 @@ void m4u_print_port_status(struct seq_file *seq, int only_print_active)
 
 	M4U_PRINT_LOG_OR_SEQ(seq, "m4u_print_port_status ========>\n");
 
-	smi_common_clock_on();
 	larb_clock_all_on();
 
 	for (port = 0; port < gM4u_port_num; port++) {
 		m4u_index = m4u_port_2_m4u_id(port);
+		if (m4u_index == -1)
+			return;
 		if (m4u_index == 0) {
 			larb = m4u_port_2_larb_id(port);
+			if (larb == -1)
+				return;
 			larb_port = m4u_port_2_larb_port(port);
 			larb_base = gLarbBaseAddr[larb];
 
@@ -1667,7 +1688,6 @@ void m4u_print_port_status(struct seq_file *seq, int only_print_active)
 	}
 
 	larb_clock_all_off();
-	smi_common_clock_off();
 
 	M4U_PRINT_LOG_OR_SEQ(seq, "\n");
 }
@@ -1760,8 +1780,11 @@ int m4u_unregister_fault_callback(int port)
 
 int m4u_enable_tf(int port, bool fgenable)
 {
-	gM4uPort[port].enable_tf = fgenable;
-	return 0;
+	if (port >= 0 && port <  M4U_PORT_UNKNOWN) {
+		gM4uPort[port].enable_tf = fgenable;
+		return 0;
+	}
+	return -1;
 }
 
 /* ============================================================================== */
