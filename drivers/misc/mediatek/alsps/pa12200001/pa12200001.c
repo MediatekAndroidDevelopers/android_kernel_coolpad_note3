@@ -28,13 +28,8 @@
 #include "alsps.h"
 #include "pa12200001.h"
 
-#ifdef CONFIG_POCKETMOD
-#include <linux/pocket_mod.h>
-#define POCKETMOD_DEBUG         0
 bool pa122_ps_enabled = false;
 bool pa122_irq_enabled = false;
-extern bool smartwake_switch;
-#endif
 
 /******************************************************************************
  * configuration
@@ -2274,11 +2269,7 @@ static long pa122_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned l
 					err = -EFAULT;
 					goto err_out;
 				}
-#ifdef CONFIG_POCKETMOD
-				if (enable && !pa122_ps_enabled)
-#else
 				if (enable)
-#endif
 				{
 					if((err = pa122_enable_ps(obj->client, 1)))
 					{
@@ -2289,11 +2280,7 @@ static long pa122_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned l
 					set_bit(CMC_BIT_PS, &obj->enable);
 					pa122_ps_enabled = true;
 				}
-#ifdef CONFIG_POCKETMOD
-				else if (pa122_ps_enabled && !smartwake_switch)
-#else
 				else
-#endif
 				{
 					if((err = pa122_enable_ps(obj->client, 0)))
 					{
@@ -2909,39 +2896,6 @@ static int ps_enable_nodata(int en)
 
         return 0;
 }
-
-#ifdef CONFIG_POCKETMOD
-int pa122_pocket_detection_check(void) {
-	int err = 0;
-	int prox_value = -1;
-
-	if (!pa122_obj) {
-                APS_ERR("pa122_obj is null!!\n");
-                return -1;
-        }
-
-        if (!pa122_ps_enabled) {
-                ps_enable_nodata(1);
-        }
-        
-	if(!pa122_obj)
-	{
-		APS_ERR("pa122_obj is null!!\n");
-		return 0;
-	}
-
-        err = pa122_read_ps(pa122_obj->client, &pa122_obj->ps);
-        if (err) {
-                APS_ERR("pocket_detection_check: pa122_read_ps err=%d\n", err);
-		return 0;
-         } else {
-                prox_value = pa122_get_ps_value(pa122_obj, pa122_obj->ps);
-                if (prox_value < 0)
-                        return 0;
-        }
-	return prox_value;
-}
-#endif
 
 static int ps_set_delay(u64 ns)
 {

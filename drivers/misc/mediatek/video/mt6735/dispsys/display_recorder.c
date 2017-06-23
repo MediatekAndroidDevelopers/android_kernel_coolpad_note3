@@ -187,12 +187,14 @@ unsigned int dprec_error_log_id = 0;
 
 char dprec_error_log_buffer[DPREC_ERROR_LOG_BUFFER_LENGTH];
 static dprec_logger_event dprec_vsync_irq_event;
+#ifdef CONFIG_TRACING
 static met_log_map dprec_met_info[DISP_SESSION_MEMORY + 2] = {
 	{"UNKWON", 0, 0},
 	{"OVL0-DSI", 0, 0},
 	{"OVL1-MHL", 0, 0},
 	{"OVL1-SMS", 0, 0},
 };
+#endif
 
 int dprec_init(void)
 {
