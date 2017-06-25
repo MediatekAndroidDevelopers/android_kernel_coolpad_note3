@@ -54,8 +54,11 @@ typedef struct touchscreen_funcs {
  int (*debug)(int );                //开关调试模式
  int (*get_vendor)(char *); //获取TP的vendor id
  int (*get_wakeup_gesture)(char * ); //获取当前系统设置的模式。
+ int (*get_gesture_ctrl)(char * );
  int (*gesture_ctrl)(const char * ); //设置滑动解锁的模式，包括（双击,UP,DOWN,RIGHT,LEFT,C,E,O,W,M）
  int (*smarthull_ctrl)(int);    //设置smarthull的开关
+ int (*get_smartwake_active)(char * );         //buf[256]: ef ab [寄存器]：值
+ int (*set_smartwake_active)(const char * );  //buf[256]: ef ab [寄存器]：值
 }touchscreen_ops_tpye;
 
 struct virtual_keys_button {
