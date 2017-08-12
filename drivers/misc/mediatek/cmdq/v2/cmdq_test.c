@@ -77,11 +77,9 @@ static int64_t gCmdqTestConfig[CMDQ_MONITOR_EVENT_MAX];
 static bool gCmdqTestSecure;
 static cmdqMonitorEventStruct gEventMonitor;
 static cmdqMonitorPollStruct gPollMonitor;
-
-#if 0
+#ifdef _CMDQ_TEST_PROC_
 static struct proc_dir_entry *gCmdqTestProcEntry;
 #endif
-
 static int32_t _test_submit_async(cmdqRecHandle handle, TaskStruct **ppTask)
 {
 	cmdqCommandStruct desc = {
@@ -3571,7 +3569,7 @@ static const struct file_operations cmdq_fops = {
 
 static int __init cmdq_test_init(void)
 {
-#if 0
+#ifdef _CMDQ_TEST_PROC_
 	CMDQ_MSG("cmdq_test_init\n");
 
 	/* Mout proc entry for debug */
@@ -3588,7 +3586,7 @@ static int __init cmdq_test_init(void)
 
 static void __exit cmdq_test_exit(void)
 {
-#if 0
+#ifdef _CMDQ_TEST_PROC_
 	CMDQ_MSG("cmdq_test_exit\n");
 	if (NULL != gCmdqTestProcEntry) {
 		proc_remove(gCmdqTestProcEntry);
