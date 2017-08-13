@@ -40,7 +40,12 @@
 #define MTK_MULTI_BAT_PROFILE_SUPPORT
 #define MTK_GET_BATTERY_ID_BY_AUXADC
 #define BATTERY_ID_CHANNEL_NUM                7
+
+#if defined(CONFIG_YULONG_BATTERY_2500MA)
+#define TOTAL_BATTERY_NUMBER                  3
+#elif defined(CONFIG_YULONG_BATTERY_3000MA)
 #define TOTAL_BATTERY_NUMBER                  4
+#endif
 //end
 
 /* Qmax for battery  */

@@ -15,7 +15,9 @@ obj-$(CONFIG_MTK_BMA250)   +=  bma250/
 obj-$(CONFIG_MTK_KXTIK1004)   +=  kxtik1004/
 obj-$(CONFIG_MTK_MPU6515A)   +=  mpu6515/
 obj-$(CONFIG_MTK_KXTJ2_1009)   +=  KXTJ2_1009/
+#### cpn3 lite
 obj-$(CONFIG_MTK_KXTJ2_1009_NEW)   +=  kxtj2_1009-new/
+####
 obj-$(CONFIG_MTK_BMA250E)   +=  bma250e/
 obj-$(CONFIG_MTK_MC3410_NEW)   +=  mc3410-new/
 obj-$(CONFIG_MTK_MC3XXX_AUTO)   +=  mc3xxx_auto/
@@ -25,6 +27,8 @@ obj-$(CONFIG_MTK_BMA255_SDO1)   +=  bma255-sdo1/
 obj-$(CONFIG_MTK_BMA056)   +=  bma056/
 obj-$(CONFIG_MTK_LSM6DS3)   +=  lsm6ds3/
 obj-$(CONFIG_MTK_ICM20645G)   +=  icm20645g/
+#### cpn3
 obj-$(CONFIG_MTK_LSM6DS3_AUTO)   +=  lsm6ds3_auto/
+####
 obj-$(CONFIG_MTK_BMA250_NEW)   +=  bma250-new/
 obj-$(CONFIG_MTK_N2DM_NEW)   +=  n2dm-new/
