@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/uaccess.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -33,6 +46,8 @@
 
 #define SMI_LOG_TAG "smi"
 
+bool smi_clk_always_on = 0;
+
 static char debug_buffer[4096];
 
 /* --------------------------------------------------------------------------- */
@@ -50,9 +65,7 @@ static int debug_open(struct inode *inode, struct file *file)
 
 static ssize_t debug_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
 {
-	int n = 0;
-
-	return simple_read_from_buffer(ubuf, count, ppos, debug_buffer, n);
+	return simple_read_from_buffer(ubuf, count, ppos, debug_buffer, strlen(debug_buffer));
 }
 
 static const struct file_operations debug_fops = {
@@ -64,6 +77,7 @@ static const struct file_operations debug_fops = {
 void SMI_DBG_Init(void)
 {
 	smi_dbgfs = debugfs_create_file("smi", S_IFREG | S_IRUGO, NULL, (void *)0, &debug_fops);
+	memset(debug_buffer, 0, sizeof(debug_buffer));
 }
 
 
