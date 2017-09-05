@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/string.h>
 #include <linux/time.h>
 #include <linux/uaccess.h>
@@ -8,10 +21,16 @@
 #include <linux/wait.h>
 #include <linux/types.h>
 
+#if defined(CONFIG_ARCH_MT6755) || defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
+#include "disp_debug.h"
+#include "mtkfb_debug.h"
+#else
+#include "debug.h"
+#endif
+
 #include "disp_drv_platform.h"
 #include "m4u_priv.h"
 #include "mtkfb.h"
-#include "debug.h"
 #include "lcm_drv.h"
 #include "ddp_path.h"
 #include "fbconfig_kdebug.h"
@@ -19,9 +38,6 @@
 #include "ddp_ovl.h"
 #include "ddp_dsi.h"
 #include "ddp_irq.h"
-
-/* #include "disp_drv.h" */
-/* #include "lcd_drv.h" */
 
 /* **************************************************************************** */
 /* This part is for customization parameters of D-IC and DSI . */
@@ -72,7 +88,12 @@ bool fbconfig_start_LCM_config;
 #define LCM_TEST_DSI_CLK    FBCONFIG_IOR(78, unsigned int)
 #define FB_GET_MISC FBCONFIG_IOR(80, unsigned int)
 
+#ifdef UFMT_GET_bpp
+#define DP_COLOR_BITS_PER_PIXEL(color)    UFMT_GET_bpp(color)
+#else
 #define DP_COLOR_BITS_PER_PIXEL(color)    ((0x0003FF00 & color) >>  8)
+#endif
+
 
 struct dentry *ConfigPara_dbgfs = NULL;
 CONFIG_RECORD_LIST head_list;
@@ -118,13 +139,16 @@ static DISP_MODULE_ENUM pm_get_dsi_handle(DSI_INDEX dsi_id)
 int fbconfig_get_esd_check(DSI_INDEX dsi_id, uint32_t cmd, uint8_t *buffer, uint32_t num)
 {
 	int array[4];
-	int ret;
+	int ret = 0;
 	/* set max return packet size */
 	/* array[0] = 0x00013700; */
 	array[0] = 0x3700 + (num << 16);
 	dsi_set_cmdq(array, 1, 1);
 	atomic_set(&ESDCheck_byCPU , 1);
-	ret = DSI_dcs_read_lcm_reg_v2(pm_get_dsi_handle(dsi_id), NULL, cmd, buffer, num);
+	if ((dsi_id == PM_DSI0) || (dsi_id == PM_DSI_DUAL))
+		ret = DSI_dcs_read_lcm_reg_v2(pm_get_dsi_handle(PM_DSI0), NULL, cmd, buffer, num);
+	else if (dsi_id == PM_DSI1)
+		ret = DSI_dcs_read_lcm_reg_v2(pm_get_dsi_handle(PM_DSI1), NULL, cmd, buffer, num);
 	atomic_set(&ESDCheck_byCPU , 0);
 	if (ret == 0)
 		return -1;
@@ -201,14 +225,20 @@ static void free_list_memory(void)
 static int fbconfig_open(struct inode *inode, struct file *file)
 {
 	PM_TOOL_T *pm_params;
-
 	file->private_data = inode->i_private;
 	pm_params = (PM_TOOL_T *) pm_get_handle();
 	PanelMaster_set_PM_enable(1);
 	pm_params->pLcm_drv = DISP_GetLcmDrv();
 	pm_params->pLcm_params = DISP_GetLcmPara();
 
-	return 0;
+	if (pm_params->pLcm_params) {
+		if (pm_params->pLcm_params->lcm_if == LCM_INTERFACE_DSI_DUAL)
+			pm_params->dsi_id = PM_DSI_DUAL;
+		else if (pm_params->pLcm_params->lcm_if == LCM_INTERFACE_DSI1)
+			pm_params->dsi_id = PM_DSI1;
+		return 0;
+	} else
+		return -EINVAL;
 }
 
 
@@ -235,9 +265,11 @@ static ssize_t fbconfig_write(struct file *file,
 
 static long fbconfig_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	int ret = 0;
+	long ret = 0;
+	int ret_val = 0; /* for other function call and put_user / get_user */
+	unsigned long copy_ret_val = 0; /* for copy_from_user / copy_to_user */
 	void __user *argp = (void __user *)arg;
-	PM_TOOL_T *pm = (PM_TOOL_T *) pm_get_handle();
+	PM_TOOL_T *pm = (PM_TOOL_T *)pm_get_handle();
 	uint32_t dsi_id = pm->dsi_id;
 	LCM_DSI_PARAMS *pParams = get_dsi_params_handle(dsi_id);
 
@@ -247,237 +279,328 @@ static long fbconfig_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 	switch (cmd) {
 	case GET_DSI_ID:
 	{
-		put_user(dsi_id, (unsigned long *)argp);
-		return 0;
+		ret_val = put_user(dsi_id, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>GET_DSI_ID put_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
 	}
+	break;
 	case SET_DSI_ID:
 	{
-		if (arg > PM_DSI_DUAL)
-			return -EINVAL;
-		pm->dsi_id = arg;
-		pr_debug("fbconfig=>SET_DSI_ID:%d\n", dsi_id);
+		unsigned int set_dsi_id = 0;
 
-		return 0;
+		ret_val = get_user(set_dsi_id, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>SET_DSI_ID get_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
+		if (set_dsi_id > PM_DSI_DUAL)
+			return -EINVAL;
+		pm->dsi_id = set_dsi_id;
+		pr_debug("fbconfig=>SET_DSI_ID:%d\n", pm->dsi_id);
 	}
+	break;
 	case LCM_TEST_DSI_CLK:
 	{
 		LCM_TYPE_FB lcm_fb;
 		LCM_PARAMS *pLcm_params = pm->pLcm_params;
 
 		lcm_fb.clock = pLcm_params->dsi.PLL_CLOCK;
-		lcm_fb.lcm_type = pLcm_params->dsi.mode;
+		lcm_fb.lcm_type = (unsigned int)pLcm_params->dsi.mode;
 
-		pr_debug("fbconfig=>LCM_TEST_DSI_CLK:%d\n", ret);
-		return copy_to_user(argp, &lcm_fb, sizeof(lcm_fb)) ? -EFAULT : 0;
+		pr_debug("fbconfig=>LCM_TEST_DSI_CLK:%d mode %d\n", lcm_fb.clock, lcm_fb.lcm_type);
+		copy_ret_val = copy_to_user(argp, &lcm_fb, sizeof(lcm_fb));
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>LCM_TEST_DSI_CLK copy_to_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
 	}
+	break;
 	case LCM_GET_ID:
 	{
-/* LCM_DRIVER*pLcm_drv=pm->pLcm_drv; */
-		unsigned int lcm_id = 0;
+		unsigned int lcm_id = 0; /* the lcm driver does not impl "get_lcm_id" */
+		/* so we cannot use pLcm_drv->get_lcm_id(), instead return 0 */
 #if 0
+		LCM_DRIVER *pLcm_drv = pm->pLcm_drv;
 		if (pLcm_drv != NULL)
 			lcm_id = pLcm_drv->get_lcm_id();
 		else
-			pr_debug("fbconfig=>LCM_GET_ID:%x\n", lcm_id);
+			pr_debug("fbconfig=>LCM_GET_ID not implemented in lcm driver\n");
 #endif
-		return copy_to_user(argp, &lcm_id, sizeof(lcm_id)) ? -EFAULT : 0;
+		copy_ret_val = copy_to_user(argp, &lcm_id, sizeof(lcm_id));
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_ID copy_to_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
 	}
+	break;
 	case DRIVER_IC_CONFIG:
 	{
 		CONFIG_RECORD_LIST *record_tmp_list = kmalloc(sizeof(*record_tmp_list), GFP_KERNEL);
-
-		if (copy_from_user(&record_tmp_list->record, (void __user *)arg, sizeof(CONFIG_RECORD))) {
-			pr_debug("list_add: copy_from_user failed! line:%d\n", __LINE__);
+		if (record_tmp_list == NULL) {
+			pr_debug("fbconfig=>DRIVER_IC_CONFIG kmalloc failed @line %d\n", __LINE__);
+			return -ENOMEM;
+		}
+		copy_ret_val = copy_from_user(&record_tmp_list->record, argp, sizeof(CONFIG_RECORD));
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>DRIVER_IC_CONFIG list_add: copy_from_user failed @line %d\n", __LINE__);
 			kfree(record_tmp_list);
 			record_tmp_list = NULL;
 			return -EFAULT;
 		}
 		list_add(&record_tmp_list->list, &head_list.list);
-		return 0;
 	}
+	break;
 	case DRIVER_IC_CONFIG_DONE:
 	{
-		/* print_from_head_to_tail(); */
+		/* while all DRIVER_IC_CONFIG is added, use this to set complete */
 		Panel_Master_dsi_config_entry("PM_DDIC_CONFIG", NULL);
-		/*free the memory ..... */
+		/* free the memory ..... */
 		free_list_memory();
-		return 0;
 	}
+	break;
 	case MIPI_SET_CC:
 	{
-		uint32_t enable = 0;
+		unsigned int enable = 0;
 
-		if (get_user(enable, (uint32_t __user *) argp)) {
-			pr_debug("[MIPI_SET_CC]: copy_from_user failed! line:%d\n",
-				 __LINE__);
+		ret_val = get_user(enable, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>MIPI_SET_CC get_user failed @line %d\n", __LINE__);
 			return -EFAULT;
 		}
-
-		PanelMaster_set_CC(dsi_id, enable);
-		return 0;
+		PanelMaster_set_CC(dsi_id, enable); /* TODO: no error code */
+		pr_debug("fbconfig=>MIPI_SET_CC DSI:%d value %d\n", dsi_id, enable);
 	}
+	break;
 	case LCM_GET_DSI_CONTINU:
 	{
-		uint32_t ret = PanelMaster_get_CC(dsi_id);
+		unsigned int enable = 0;
+
+		enable = PanelMaster_get_CC(dsi_id);
 		/* need to improve ,0 now means nothing but one parameter.... */
-		pr_debug("LCM_GET_DSI_CONTINU=>DSI: %d\n", ret);
-		return put_user(ret, (unsigned long *)argp);
+		pr_debug("fbconfig=>LCM_GET_DSI_CONTINU DSI:%d value %d\n", dsi_id, enable);
+		ret_val = put_user(enable, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_DSI_CONTINU put_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
 	}
+	break;
 	case MIPI_SET_CLK:
 	{
-		uint32_t clk = 0;
+		unsigned int clk = 0;
 
-		if (get_user(clk, (uint32_t __user *) argp)) {
-			pr_debug("[MIPI_SET_CLK]: copy_from_user failed! line:%d\n",
-				 __LINE__);
+		ret_val = get_user(clk, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>MIPI_SET_CLK get_user failed @line %d\n", __LINE__);
 			return -EFAULT;
 		}
-
-		pr_debug("LCM_GET_DSI_CLK=>dsi:%d\n", clk);
-		Panel_Master_dsi_config_entry("PM_CLK", &clk);
-		return 0;
+		Panel_Master_dsi_config_entry("PM_CLK", &clk); /* TODO: check error code */
+		pr_debug("fbconfig=>MIPI_SET_CLK DSI:%d value %d\n", dsi_id, clk);
 	}
+	break;
 	case LCM_GET_DSI_CLK:
 	{
-		uint32_t clk = pParams->PLL_CLOCK;
+		unsigned int clk = 0;
 
-		pr_debug("LCM_GET_DSI_CLK=>dsi:%d\n", clk);
-		return put_user(clk, (unsigned long *)argp);
+		clk = pParams->PLL_CLOCK;
+		pr_debug("fbconfig=>LCM_GET_DSI_CLK DSI:%d value %d\n", dsi_id, clk);
+		ret_val = put_user(clk, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_DSI_CLK put_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
 	}
+	break;
 	case MIPI_SET_SSC:
 	{
-		DSI_RET dsi_ssc;
+		unsigned int dsi_ssc = 0;
 
-		if (copy_from_user(&dsi_ssc, (void __user *)argp, sizeof(dsi_ssc))) {
-			pr_debug("[MIPI_SET_SSC]: copy_from_user failed! line:%d\n",
-				 __LINE__);
+		ret_val = get_user(dsi_ssc, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>MIPI_SET_SSC get_user failed @line %d\n", __LINE__);
 			return -EFAULT;
 		}
-
-		pr_debug("Pmaster:set mipi ssc line:%d\n", __LINE__);
 		Panel_Master_dsi_config_entry("PM_SSC", &dsi_ssc);
-		return 0;
+		pr_debug("fbconfig=>MIPI_SET_SSC DSI:%d value %d\n", dsi_id, dsi_ssc);
 	}
+	break;
 	case LCM_GET_DSI_SSC:
 	{
-		uint32_t ssc = pParams->ssc_range;
+		unsigned int ssc = 0;
 
-		if (pParams->ssc_disable)
+		ssc = pParams->ssc_range;
+		if (pParams->ssc_disable != 0)
 			ssc = 0;
-		return put_user(ssc, (unsigned long *)argp);
-	}
-	case LCM_GET_DSI_LANE_NUM:
-	{
-		uint32_t lane_num = pParams->LANE_NUM;
-
-		pr_debug("Panel Master=>LCM_GET_DSI_Lane_num=>dsi:%d\r\n", lane_num);
-		return put_user(lane_num, (unsigned long *)argp);
-	}
-	case LCM_GET_DSI_TE:
-	{
-		int ret;
-
-		ret = PanelMaster_get_TE_status(dsi_id);
-		pr_debug("fbconfig=>LCM_GET_DSI_TE:%d\n", ret);
-		return put_user(ret, (unsigned long *)argp);
-	}
-	case LCM_GET_DSI_TIMING:
-	{
-		uint32_t ret;
-		MIPI_TIMING timing;
-
-		if (copy_from_user(&timing, (void __user *)argp, sizeof(timing))) {
-			pr_debug("[MIPI_GET_TIMING]: copy_from_user failed! line:%d\n",
-				 __LINE__);
+		pr_debug("fbconfig=>LCM_GET_DSI_SSC DSI:%d value %d\n", dsi_id, ssc);
+		ret_val = put_user(ssc, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_DSI_SSC put_user failed @line %d\n", __LINE__);
 			return -EFAULT;
 		}
-		ret = PanelMaster_get_dsi_timing(dsi_id, timing.type);
-		pr_debug("fbconfig=>LCM_GET_DSI_TIMING:%d\n", ret);
-		timing.value = ret;
-		return copy_to_user(argp, &timing, sizeof(timing)) ? -EFAULT : 0;
 	}
+	break;
+	case LCM_GET_DSI_LANE_NUM:
+	{
+		unsigned int lane_num = 0;
+
+		lane_num = pParams->LANE_NUM;
+		pr_debug("fbconfig=>LCM_GET_DSI_LANE_NUM DSI:%d value %d\n", dsi_id, lane_num);
+		ret_val = put_user(lane_num, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_DSI_LANE_NUM put_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
+	}
+	break;
+	case LCM_GET_DSI_TE:
+	{
+		unsigned int dsi_te = 0;
+
+		dsi_te = PanelMaster_get_TE_status(dsi_id);
+		pr_debug("fbconfig=>LCM_GET_DSI_TE DSI:%d value %d\n", dsi_id, dsi_te);
+		ret_val = put_user(dsi_te, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_DSI_TE put_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
+	}
+	break;
+	case LCM_GET_DSI_TIMING:
+	{
+		unsigned int r = 0;
+		MIPI_TIMING timing;
+
+		copy_ret_val = copy_from_user(&timing, argp, sizeof(timing));
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_DSI_TIMING copy_from_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
+		r = PanelMaster_get_dsi_timing(dsi_id, timing.type);
+		pr_debug("fbconfig=>LCM_GET_DSI_TIMING DSI:%d result %d\n", dsi_id, r);
+		timing.value = r;
+		copy_ret_val = copy_to_user(argp, &timing, sizeof(timing));
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_DSI_TIMING copy_to_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
+	}
+	break;
 	case MIPI_SET_TIMING:
 	{
 		MIPI_TIMING timing;
 
 		if (primary_display_is_sleepd())
-			return -EFAULT;
-		if (copy_from_user(&timing, (void __user *)argp, sizeof(timing))) {
-			pr_debug("[MIPI_SET_TIMING]: copy_from_user failed! line:%d\n",
-				 __LINE__);
+			return -EPERM;
+		copy_ret_val = copy_from_user(&timing, argp, sizeof(timing));
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>MIPI_SET_TIMING copy_from_user failed @line %d\n", __LINE__);
 			return -EFAULT;
 		}
-
-		PanelMaster_DSI_set_timing(dsi_id, timing);
-		return 0;
+		PanelMaster_DSI_set_timing(dsi_id, timing); /* TODO: no error code */
 	}
+	break;
 	case FB_LAYER_GET_EN:
 	{
-		pr_debug("[FB_LAYER_GET_EN] not supported anymore\n");
-		return 0;
+		pr_debug("[FB_LAYER_GET_EN] not support any more\n");
+		return  0;
 	}
+	break;
 	case FB_LAYER_GET_INFO:
 	{
-		pr_debug("[FB_LAYER_GET_INFO] not supported anymore\n");
-		return 0;
+		pr_debug("[FB_LAYER_GET_INFO] not support any more\n");
+		return  0;
 	}
+	break;
 	case FB_LAYER_DUMP:
 	{
-		pr_debug("[FB_LAYER_DUMP] not supported anymore\n");
-		return 0;
+		pr_debug("[FB_LAYER_DUMP] not support any more\n");
+		return  0;
 	}
+	break;
 	case LCM_GET_ESD:
 	{
 		ESD_PARA esd_para;
-		uint8_t *buffer;
+		uint8_t *buffer = NULL;
 
-		if (copy_from_user(&esd_para, (void __user *)arg, sizeof(esd_para))) {
-			pr_debug("[LCM_GET_ESD]: copy_from_user failed! line:%d\n",
-				 __LINE__);
+		copy_ret_val = copy_from_user(&esd_para, argp, sizeof(esd_para));
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_ESD copy_from_user failed @line %d\n", __LINE__);
 			return -EFAULT;
+		}
+		if (esd_para.para_num <= 0) {
+			pr_debug("fbconfig=>LCM_GET_ESD para_num:%d < 0\n", esd_para.para_num);
+			return -1;
 		}
 		buffer = kzalloc(esd_para.para_num + 6, GFP_KERNEL);
-		if (!buffer)
+		if (buffer == NULL)
 			return -ENOMEM;
 
-		ret =
-			fbconfig_get_esd_check_test(dsi_id, esd_para.addr, buffer,
-						    esd_para.para_num);
-		if (ret < 0) {
+		ret_val = fbconfig_get_esd_check_test(dsi_id, esd_para.addr, buffer,
+						esd_para.para_num);
+		if (ret_val < 0) {
 			kfree(buffer);
+			buffer = NULL;
+			return -EAGAIN;
+		}
+		/* TODO: esd_para.esd_ret_buffer not transferred */
+		copy_ret_val = copy_to_user(esd_para.esd_ret_buffer, buffer, esd_para.para_num);
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>LCM_GET_ESD copy_to_user failed @line %d\n", __LINE__);
+			kfree(buffer);
+			buffer = NULL;
 			return -EFAULT;
 		}
-		ret = copy_to_user(esd_para.esd_ret_buffer, buffer, esd_para.para_num);
 		kfree(buffer);
-		return ret;
+		buffer = NULL;
 	}
+	break;
 	case TE_SET_ENABLE:
 	{
-		uint32_t te_enable = 0;
+		unsigned int te_enable = 0;
 
-		if (get_user(te_enable, (unsigned long *)argp))
+		ret_val = get_user(te_enable, (unsigned int __user *)argp);
+		if (ret_val != 0) {
+			pr_debug("fbconfig=>TE_SET_ENABLE get_user failed @line %d\n", __LINE__);
 			return -EFAULT;
-
-		return 0;
+		}
+		/* TODO: acutally set TE? */
+		pr_debug("fbconfig=>TE_SET_ENABLE\n");
 	}
+	break;
 	case DRIVER_IC_RESET:
 	{
 		Panel_Master_dsi_config_entry("DRIVER_IC_RESET", NULL);
-		return 0;
+		ret = 0;
+		pr_debug("fbconfig=>DRIVER_IC_RESET done\n");
 	}
+	break;
 	case FB_GET_MISC:
 	{
-		struct misc_property misc = { 0 };
+		struct misc_property misc = {
+			.dual_port = 0,
+			.overall_layer_num = 0,
+			.reserved = 0,
+		};
 
 		if (pm->pLcm_params->lcm_if == LCM_INTERFACE_DSI_DUAL)
 			misc.dual_port = 1;
 		misc.overall_layer_num = TOTAL_OVL_LAYER_NUM;
-		ret = copy_to_user(argp, &misc,  sizeof(misc));
-		return 0;
+		copy_ret_val = copy_to_user(argp, &misc, sizeof(misc));
+		if (copy_ret_val != 0) {
+			pr_debug("fbconfig=>FB_GET_MISC copy_to_user failed @line %d\n", __LINE__);
+			return -EFAULT;
+		}
+		pr_debug("fbconfig=>FB_GET_MISC ret\n");
 	}
+	break;
 	default:
-		return ret;
+		pr_debug("fbconfig=>INVALID IOCTL CMD:%d\n", cmd);
+		break;
 	}
+
+	return ret;
 }
 
 static int fbconfig_release(struct inode *inode, struct file *file)

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __MTKFB_VSYNC_H__
 #define __MTKFB_VSYNC_H__
 
@@ -14,7 +27,10 @@ typedef enum {
 
 #define MTKFB_VSYNC_IOCTL     _IOW(MTKFB_VSYNC_IOCTL_MAGIC, 1, vsync_src)
 
-#if defined(CONFIG_ARCH_MT6735) || defined(CONFIG_ARCH_MT6735M) || defined(CONFIG_ARCH_MT6753)
+#if defined(CONFIG_ARCH_MT6735)
+	|| defined(CONFIG_ARCH_MT6735M)
+	|| defined(CONFIG_ARCH_MT6753)
+	|| defined(CONFIG_ARCH_MT8167)
 void mtkfb_vsync_log_enable(int enable);
 #endif
 

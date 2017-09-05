@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 /**
  * NOTICE:
  * MUST BE consistent with bionic/libc/kernel/common/linux/disp_svp.h
@@ -24,7 +37,8 @@ typedef enum {
 	DISP_IF_HDMI = 7,
 	DISP_IF_HDMI_SMARTBOOK,
 	DISP_IF_MHL,
-	DISP_IF_EPD
+	DISP_IF_EPD,
+	DISP_IF_SLIMPORT
 } DISP_IF_TYPE;
 
 typedef enum {
@@ -221,8 +235,10 @@ typedef struct disp_session_info_t {
 	unsigned int displayFormat;
 	DISP_IF_MODE displayMode;
 	unsigned int vsyncFPS;
-	unsigned int physicalWidth;
-	unsigned int physicalHeight;
+	unsigned int physicalWidth;	/* length: mm, for legacy use */
+	unsigned int physicalHeight;	/* length: mm, for legacy use */
+	unsigned int physicalWidthUm;	/* length: um, for more precise precision */
+	unsigned int physicalHeightUm;	/* length: um, for more precise precision */
 	unsigned int isConnected;
 } disp_session_info;
 

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __DDP_COLOR_H__
 #define __DDP_COLOR_H__
 
@@ -65,21 +78,23 @@ enum {
 #define MIRAVISION_HW_VERSION       (2)
 #elif defined(CONFIG_ARCH_MT6795)
 #define MIRAVISION_HW_VERSION       (3)
-#elif defined(CONFIG_ARCH_MT6735)
+#elif defined(CONFIG_ARCH_MT6735) || defined(CONFIG_ARCH_MT8167)
 #define MIRAVISION_HW_VERSION       (4)
 #elif defined(CONFIG_ARCH_MT6735M)
 #define MIRAVISION_HW_VERSION       (5)
 #elif defined(CONFIG_ARCH_MT6753)
 #define MIRAVISION_HW_VERSION       (6)
-#elif defined(CONFIG_ARCH_MT6580)
+#elif defined(CONFIG_ARCH_MT6570) || defined(CONFIG_ARCH_MT6580)
 #define MIRAVISION_HW_VERSION       (7)
 #elif defined(CONFIG_ARCH_MT6755)
 #define MIRAVISION_HW_VERSION       (8)
-#else
+#elif defined(CONFIG_ARCH_MT6797)
 #define MIRAVISION_HW_VERSION       (9)
+#else
+#define MIRAVISION_HW_VERSION       (0)
 #endif
 
-#define MIRAVISION_SW_VERSION       (1)	/* 1:Android Lollipop */
+#define MIRAVISION_SW_VERSION       (3)	/* 3:Android N */
 #define MIRAVISION_SW_FEATURE_VIDEO_DC  (0x1)
 #define MIRAVISION_SW_FEATURE_AAL       (0x2)
 #define MIRAVISION_SW_FEATURE_PQDS       (0x4)
@@ -127,6 +142,7 @@ enum {
 #define SWREG_CCORR_BASE_ADDRESS            (DISP_COLOR_SWREG_COLOR_BASE + 0x0007)
 #define SWREG_MDP_COLOR_BASE_ADDRESS        (DISP_COLOR_SWREG_COLOR_BASE + 0x0008)
 #define SWREG_COLOR_MODE                    (DISP_COLOR_SWREG_COLOR_BASE + 0x0009)
+#define SWREG_RSZ_BASE_ADDRESS              (DISP_COLOR_SWREG_COLOR_BASE + 0x000A)
 
 
 #define SWREG_TDSHP_TUNING_MODE             (DISP_COLOR_SWREG_TDSHP_BASE + 0x0000)
