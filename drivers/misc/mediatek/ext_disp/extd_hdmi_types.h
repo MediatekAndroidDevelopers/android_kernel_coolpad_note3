@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 /* --------------------------------------------------------------------------- */
 #ifndef _EXTD_HDMI_TYPES_H_
 #define     _EXTD_HDMI_TYPES_H_
@@ -106,6 +119,8 @@ struct _t_hdmi_context {
 	enum HDMI_VIDEO_RESOLUTION output_video_resolution;
 	enum HDMI_AUDIO_FORMAT output_audio_format;
 	enum HDMI_OUTPUT_MODE output_mode;
+	enum HDMI_VIDEO_INPUT_FORMAT vin;
+	enum HDMI_VIDEO_OUTPUT_FORMAT vout;
 };
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -114,7 +129,11 @@ struct _t_hdmi_context {
 #define HDMI_DEVNAME "hdmitx"
 
 #define HDMI_DPI(suffix)        DPI  ## suffix
+#if defined(CONFIG_ARCH_MT8167)
+#define HMID_DEST_DPI           DISP_MODULE_DPI1
+#else
 #define HMID_DEST_DPI           DISP_MODULE_DPI
+#endif
 
 #define MTK_HDMI_NO_FENCE_FD        ((int)(-1))	/* ((int)(~0U>>1)) */
 #define MTK_HDMI_NO_ION_FD        ((int)(-1))	/* ((int)(~0U>>1)) */

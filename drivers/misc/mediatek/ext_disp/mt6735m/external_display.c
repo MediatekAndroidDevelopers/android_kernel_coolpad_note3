@@ -1,3 +1,15 @@
+/*
+* Copyright (C) 2016 MediaTek Inc.
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2 as
+* published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+*/
 #include <linux/delay.h>
 #include <linux/sched.h>
 #include <linux/semaphore.h>
@@ -1017,13 +1029,13 @@ int ext_disp_trigger(int blocking, void *callback, unsigned int userdata, unsign
 
 	EXT_DISP_FUNC();
 
+	_ext_disp_path_lock();
 	if (pgc->state == EXTD_DEINIT || pgc->state == EXTD_SUSPEND || pgc->need_trigger_overlay < 1) {
 		EXT_DISP_LOG("trigger ext display is already slept\n");
 		MMProfileLogEx(ddp_mmp_get_events()->Extd_ErrorInfo, MMProfileFlagPulse, Trigger, 0);
+		_ext_disp_path_unlock();
 		return -1;
 	}
-
-	_ext_disp_path_lock();
 
 	if (_should_trigger_interface()) {
 		if (DISP_SESSION_TYPE(session) == DISP_SESSION_EXTERNAL && DISP_SESSION_DEV(session) == DEV_MHL + 1)

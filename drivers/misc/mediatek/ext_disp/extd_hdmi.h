@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 /* --------------------------------------------------------------------------- */
 #ifndef HDMITX_H
 #define     HDMITX_H
@@ -42,7 +55,8 @@ enum HDMI_CAPABILITY {
 	HDMI_SCALE_ADJUSTMENT_SUPPORT = 0x01,
 	HDMI_ONE_RDMA_LIMITATION = 0x02,
 	HDMI_PHONE_GPIO_REUSAGE  = 0x04,
-	HDMI_FACTORY_MODE_NEW    = 0x80,
+	/*bit3-bit6: channal count; bit7-bit9: sample rate; bit10-bit11: bitwidth*/
+	HDMI_FACTORY_MODE_NEW    = 0x1000,
 };
 
 struct hdmi_device_status {
@@ -195,6 +209,7 @@ int hdmi_post_init(void);
 void hdmi_force_on(int from_uart_drv);
 void hdmi_cable_fake_plug_in(void);
 void hdmi_cable_fake_plug_out(void);
+void hdmi_force_resolution(int params);
 
 void hdmi_suspend(void);
 void hdmi_resume(void);
@@ -202,6 +217,7 @@ void hdmi_power_on(void);
 void hdmi_power_off(void);
 
 int hdmi_wait_vsync_debug(int enable);
+int hdmi_dump_vendor_chip_register(void);
 
 extern void Extd_DBG_Init(void);
 #endif
