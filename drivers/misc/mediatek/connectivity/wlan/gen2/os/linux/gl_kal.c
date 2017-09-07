@@ -826,12 +826,12 @@ WLAN_STATUS kalFirmwareOpen(IN P_GLUE_INFO_T prGlueInfo)
 	case WMTHWVER_MT6620_E3:
 	case WMTHWVER_MT6620_E4:
 	case WMTHWVER_MT6620_E5:
-		filp = filp_open("/etc/firmware/" CFG_FW_FILENAME, O_RDONLY, 0);
+		filp = filp_open("/vendor/etc/firmware/" CFG_FW_FILENAME, O_RDONLY, 0);
 		break;
 
 	case WMTHWVER_MT6620_E6:
 	default:
-		filp = filp_open("/etc/firmware/" CFG_FW_FILENAME "_E6", O_RDONLY, 0);
+		filp = filp_open("/vendor/etc/firmware/" CFG_FW_FILENAME "_E6", O_RDONLY, 0);
 		break;
 	}
 #elif defined(MT6628)
@@ -845,14 +845,14 @@ WLAN_STATUS kalFirmwareOpen(IN P_GLUE_INFO_T prGlueInfo)
 		goto open_success;
 #endif
 	kalMemZero(aucFilePath, sizeof(aucFilePath));
-	kalMemCopy(aucFilePath, "/etc/firmware/" CFG_FW_FILENAME "_", strlen("/etc/firmware/" CFG_FW_FILENAME "_"));
-	glGetChipInfo(prGlueInfo, &aucFilePath[strlen("/etc/firmware/" CFG_FW_FILENAME "_")]);
+	kalMemCopy(aucFilePath, "/vendor/etc/firmware/" CFG_FW_FILENAME "_", strlen("/vendor/etc/firmware/" CFG_FW_FILENAME "_"));
+	glGetChipInfo(prGlueInfo, &aucFilePath[strlen("/vendor/etc/firmware/" CFG_FW_FILENAME "_")]);
 
 	DBGLOG(INIT, INFO, "open file: %s\n", aucFilePath);
 
 	filp = filp_open(aucFilePath, O_RDONLY, 0);
 #else
-	filp = filp_open("/etc/firmware/" CFG_FW_FILENAME, O_RDONLY, 0);
+	filp = filp_open("/vendor/etc/firmware/" CFG_FW_FILENAME, O_RDONLY, 0);
 #endif
 	if (IS_ERR(filp)) {
 		DBGLOG(INIT, ERROR, "Open FW image: %s failed\n", CFG_FW_FILENAME);
