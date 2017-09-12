@@ -97,9 +97,6 @@ static int touch_event_handler(void *unused);
 static int tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
 static int tpd_i2c_detect(struct i2c_client *client, struct i2c_board_info *info);
 static int tpd_i2c_remove(struct i2c_client *client);
-static void tpd_on(void);
-static void tpd_off(void);
-static s32 gtp_send_cfg(struct i2c_client *);
 
 #ifdef CONFIG_GTP_CHARGER_DETECT
 #define TPD_CHARGER_CHECK_CIRCLE		50
@@ -179,8 +176,6 @@ static u8 gtp_bak_ref_proc(struct i2c_client *client, u8 mode);
 static u8 gtp_main_clk_proc(struct i2c_client *client);
 static void gtp_recovery_reset(struct i2c_client *client);
 #endif
-
-static struct proc_dir_entry *gt91xx_config_proc;
 
 struct i2c_client *i2c_client_point = NULL;
 static const struct i2c_device_id tpd_i2c_id[] = {{"gt9xx", 0}, {} };
@@ -470,150 +465,6 @@ s32 tpd_ps_operate(void *self, u32 command, void *buff_in, s32 size_in,
 		return err;
 }
 #endif
-
-static ssize_t gt91xx_config_read_proc(struct file *file, char *buffer, size_t count, loff_t *ppos)
-{
-		char *page = NULL;
-		char *ptr = NULL;
-		char temp_data[GTP_CONFIG_MAX_LENGTH + 2] = {0};
-		int i, len, err = -1;
-
-		page = kmalloc(PAGE_SIZE, GFP_KERNEL);
-		if (!page) {
-			kfree(page);
-			return -ENOMEM;
-		}
-
-	ptr = page;
-	ptr += sprintf(ptr, "==== GT9XX config init value====\n");
-
-	for (i = 0; i < GTP_CONFIG_MAX_LENGTH; i++) {
-		ptr += sprintf(ptr, "0x%02X ", config[i + 2]);
-
-		if (i % 8 == 7)
-			ptr += sprintf(ptr, "\n");
-	}
-
-		ptr += sprintf(ptr, "\n");
-
-		ptr += sprintf(ptr, "==== GT9XX config real value====\n");
-		i2c_read_bytes(i2c_client_point, GTP_REG_CONFIG_DATA, temp_data, GTP_CONFIG_MAX_LENGTH);
-
-	for (i = 0; i < GTP_CONFIG_MAX_LENGTH; i++) {
-		ptr += sprintf(ptr, "0x%02X ", temp_data[i]);
-
-		if (i % 8 == 7)
-			ptr += sprintf(ptr, "\n");
-	}
-		/* Touch PID & VID */
-		ptr += sprintf(ptr, "\n");
-		ptr += sprintf(ptr, "==== GT9XX Version ID ====\n");
-		i2c_read_bytes(i2c_client_point, GTP_REG_VERSION, temp_data, 6);
-		ptr += sprintf(ptr, "Chip PID: %c%c%c	VID: 0x%02X%02X\n",
-		temp_data[0], temp_data[1], temp_data[2], temp_data[5], temp_data[4]);
-		i2c_read_bytes(i2c_client_point, 0x41E4, temp_data, 1);
-		ptr += sprintf(ptr, "Boot status 0x%X\n", temp_data[0]);
-
-		/* Touch Status and Clock Gate */
-		ptr += sprintf(ptr, "\n");
-		ptr += sprintf(ptr, "==== Touch Status and Clock Gate ====\n");
-		ptr += sprintf(ptr, "status: 1: on, 0 :off\n");
-		ptr += sprintf(ptr, "status:%d\n", (tpd_halt+1)&0x1);
-
-
-		len = ptr - page;
-		if (*ppos >= len) {
-			kfree(page);
-			return 0;
-		}
-	err = copy_to_user(buffer, (char *)page, len);
-	*ppos += len;
-	if (err) {
-			kfree(page);
-			return err;
-		}
-	kfree(page);
-	return len;
-
-		/* return (ptr - page); */
-}
-
-static ssize_t gt91xx_config_write_proc(struct file *file, const char *buffer, size_t count,
-					loff_t *ppos)
-{
-		s32 ret = 0;
-		char temp[25] = {0}; /* for store special format cmd */
-		char mode_str[15] = {0};
-		unsigned int mode;
-		u8 buf[1];
-
-		GTP_DEBUG("write count %ld\n", (unsigned long)count);
-
-	if (count > GTP_CONFIG_MAX_LENGTH) {
-		GTP_ERROR("size not match [%d:%ld]", GTP_CONFIG_MAX_LENGTH, (unsigned long)count);
-		return -EFAULT;
-	}
-
-	/**********************************************/
-	/* for store special format cmd	*/
-	if (copy_from_user(temp, buffer, sizeof(temp))) {
-		GTP_ERROR("copy from user fail 2");
-		return -EFAULT;
-	}
-	ret = sscanf(temp, "%s %d", (char *)&mode_str, &mode);
-
-		/***********POLLING/EINT MODE switch****************/
-	if (strcmp(mode_str, "polling") == 0) {
-		if (mode >= 10 && mode <= 200) {
-			GTP_INFO("Switch to polling mode, polling time is %d", mode);
-			tpd_eint_mode = 0;
-			tpd_polling_time = mode;
-			tpd_flag = 1;
-			wake_up_interruptible(&waiter);
-		} else {
-			GTP_INFO("Wrong polling time, please set between 10~200ms");
-		}
-		return count;
-	}
-	if (strcmp(mode_str, "eint") == 0) {
-		GTP_INFO("Switch to eint mode");
-		tpd_eint_mode = 1;
-		return count;
-	}
-
-	if (strcmp(mode_str, "switch") == 0) {
-		if (mode == 0)/* turn off */
-			tpd_off();
-		else if (mode == 1)/* turn on */
-			tpd_on();
-		else
-			GTP_ERROR("error mode :%d", mode);
-		return count;
-	}
-	/* force clear config */
-	if (strcmp(mode_str, "clear_config") == 0) {
-		GTP_INFO("Force clear config");
-		buf[0] = 0x10;
-		ret = i2c_write_bytes(i2c_client_point, GTP_REG_SLEEP, buf, 1);
-		return count;
-	}
-
-	if (copy_from_user(&config[2], buffer, count)) {
-		GTP_ERROR("copy from user fail\n");
-		return -EFAULT;
-	}
-
-		/***********clk operate reseved****************/
-		ret = gtp_send_cfg(i2c_client_point);
-		abs_x_max = (config[RESOLUTION_LOC + 1] << 8) + config[RESOLUTION_LOC];
-		abs_y_max = (config[RESOLUTION_LOC + 3] << 8) + config[RESOLUTION_LOC + 2];
-		int_type = (config[TRIGGER_LOC]) & 0x03;
-
-	if (ret < 0)
-		GTP_ERROR("send config failed.");
-
-		return count;
-}
 
 #ifdef CONFIG_GTP_SUPPORT_I2C_DMA
 s32 i2c_dma_read(struct i2c_client *client, u16 addr, u8 *rxbuf, s32 len)
@@ -1010,10 +861,10 @@ Input:
 Output:
 		Executive outcomes.0--success,non-0--fail.
 *******************************************************/
+#ifdef CONFIG_GTP_DRIVER_SEND_CFG
 static s32 gtp_send_cfg(struct i2c_client *client)
 {
 		s32 ret = 1;
-#ifdef CONFIG_GTP_DRIVER_SEND_CFG
 		s32 retry = 0;
 
 		if (pnl_init_error) {
@@ -1028,9 +879,9 @@ static s32 gtp_send_cfg(struct i2c_client *client)
 				break;
 
 		}
-#endif
 		return ret;
 }
+#endif
 
 #ifdef CONFIG_GTP_CHARGER_DETECT
 static int gtp_send_chr_cfg(struct i2c_client *client)
@@ -1778,10 +1629,6 @@ exit_clk_proc:
 #endif
 /* ************* For GT9XXF End ***********************/
 
-static const struct file_operations gt_upgrade_proc_fops = {
-		.write = gt91xx_config_write_proc,
-		.read = gt91xx_config_read_proc
-};
 #if 0
 static int tpd_irq_registration(void)
 {
@@ -1861,12 +1708,6 @@ static s32 tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
 		goto out;
 	}
 	GTP_DEBUG("gtp_init_panel success");
-	/* Create proc file system */
-	gt91xx_config_proc = proc_create(GT91XX_CONFIG_PROC_FILE, 0660, NULL, &gt_upgrade_proc_fops);
-	if (gt91xx_config_proc == NULL) {
-		GTP_ERROR("create_proc_entry %s failed", GT91XX_CONFIG_PROC_FILE);
-		goto out;
-	}
 
 #ifdef CONFIG_GTP_CREATE_WR_NODE
 	init_wr_node(client);
@@ -3322,44 +3163,6 @@ static struct tpd_driver_t tpd_device_driver = {
 			},
 #endif
 };
-
-static void tpd_off(void)
-{
-
-	int ret;
-
-	ret = regulator_disable(tpd->reg);
-	if (ret != 0)
-		TPD_DMESG("Failed to disable reg-vgp6: %d\n", ret);
-
-	GTP_INFO("GTP enter sleep!");
-
-	tpd_halt = 1;
-	//gtp_irq_disable();
-	disable_irq(touch_irq);
-}
-
-static void tpd_on(void)
-{
-	s32 ret = -1, retry = 0;
-
-	while (retry++ < 5) {
-		ret = tpd_power_on(i2c_client_point);
-		if (ret < 0)
-			GTP_ERROR("I2C Power on ERROR!");
-
-			ret = gtp_send_cfg(i2c_client_point);
-			if (ret > 0)
-				GTP_DEBUG("Wakeup sleep send config success.");
-	}
-	if (ret < 0)
-		GTP_ERROR("GTP later resume failed.");
-
-	//gtp_irq_enable();
-	enable_irq(touch_irq);
-
-	tpd_halt = 0;
-}
 
 /* called when loaded into kernel */
 static int __init tpd_driver_init(void)

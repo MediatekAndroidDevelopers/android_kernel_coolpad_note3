@@ -196,7 +196,6 @@ a sample config, send this config should cause the chip cannot work normally*/
 /* ***************************PART3:OTHER define********************************* */
 #define GTP_DRIVER_VERSION          "V2.4<2014/11/28>"
 #define GTP_I2C_NAME                "Goodix-TS"
-#define GT91XX_CONFIG_PROC_FILE     "gt9xx_config"
 #define GTP_POLL_TIME               10
 #define GTP_ADDR_LENGTH             2
 #define GTP_CONFIG_MIN_LENGTH       186
