@@ -395,3 +395,7 @@ int display_freeze_mode(int enable, int need_lock);
 #if defined(OVL_TIME_SHARING)
 int primary_display_disable_ovl2mem(void);
 #endif
+
+void set_needs_apply_rgb(bool needed);
+ssize_t mtk_disp_ld_get_rgb(struct device *dev, struct device_attribute *attr, char *buf);
+ssize_t mtk_disp_ld_set_rgb(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);

@@ -2382,7 +2382,7 @@ static u32 mtk_disp_ld_r = MAX_LUT_SCALE;
 static u32 mtk_disp_ld_g = MAX_LUT_SCALE;
 static u32 mtk_disp_ld_b = MAX_LUT_SCALE;
 
-static ssize_t mtk_disp_ld_get_rgb(struct device *dev,
+ssize_t mtk_disp_ld_get_rgb(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	return scnprintf(buf, PAGE_SIZE, "%d %d %d\n", mtk_disp_ld_r, mtk_disp_ld_g, mtk_disp_ld_b);
@@ -2399,7 +2399,7 @@ static ssize_t mtk_disp_ld_get_rgb(struct device *dev,
  * In order to avoid floating point computations in kernel space we scale the alpha
  * value by 1000 and then scale back the result using integer division.
  */
-static ssize_t mtk_disp_ld_set_rgb(struct device *dev,
+ssize_t mtk_disp_ld_set_rgb(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	int r = MAX_LUT_SCALE, g = MAX_LUT_SCALE, b = MAX_LUT_SCALE;
@@ -2418,6 +2418,8 @@ static ssize_t mtk_disp_ld_set_rgb(struct device *dev,
 	mtk_disp_ld_g = g;
 	mtk_disp_ld_b = b;
 	schedule_work(&mtk_rgb_work_queue.work);
+
+	set_needs_apply_rgb(primary_display_is_sleepd());
 
 	return count;
 }
