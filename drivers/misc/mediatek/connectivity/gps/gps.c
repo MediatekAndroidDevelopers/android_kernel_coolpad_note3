@@ -54,7 +54,7 @@
  * Definition
 ******************************************************************************/
 /* device name and major number */
-#define GPS_DEVNAME            "mt3326-gps"
+#define GPS_DEVNAME            "gps"
 /******************************************************************************
  * Debug configuration
 ******************************************************************************/
@@ -67,7 +67,7 @@
 #define PFX "GPS: "
 #else
 #define GPS_DBG_NONE(fmt, arg...)    do {} while (0)
-#define GPS_DBG pr_debug
+#define GPS_DBG GPS_DBG_NONE
 #define GPS_TRC GPS_DBG_NONE
 #define GPS_VER pr_debug
 #define GPS_ERR pr_err
@@ -267,7 +267,7 @@ static inline int mt3326_gps_set_suspend(struct gps_drv_obj *obj, unsigned char 
 		return -1;
 	mutex_lock(&obj->sem);
 	if (obj->suspend != suspend) {
-		/* GPS_DBG("issue sysfs_notify : %p\n", obj->kobj->sd); */
+		GPS_DBG("issue sysfs_notify : %p\n", obj->kobj->sd);
 		sysfs_notify(obj->kobj, NULL, "suspend");
 	}
 	obj->suspend = suspend;
@@ -1077,10 +1077,9 @@ static int mt3326_gps_suspend(struct platform_device *dev, pm_message_t state)
 		return -1;
 	}
 
+	GPS_DBG("dev = %p, event = %u,", dev, state.event);
 	if (state.event == PM_EVENT_SUSPEND)
 		err = mt3326_gps_dev_suspend(drvobj);
-	else
-		GPS_DBG("dev = %p, event = %u,", dev, state.event);
 	return err;
 }
 
@@ -1090,6 +1089,7 @@ static int mt3326_gps_resume(struct platform_device *dev)
 	struct gps_dev_obj *devobj = (struct gps_dev_obj *)platform_get_drvdata(dev);
 	struct gps_drv_obj *drvobj = (struct gps_drv_obj *)dev_get_drvdata(devobj->dev);
 
+	GPS_DBG("");
 	return mt3326_gps_dev_resume(drvobj);
 }
 
@@ -1098,7 +1098,7 @@ static int mt3326_gps_resume(struct platform_device *dev)
 /*****************************************************************************/
 #ifdef CONFIG_OF
 static const struct of_device_id apgps_of_ids[] = {
-	{.compatible = "mediatek,mt3326-gps",},
+	{.compatible = "mediatek,gps",},
 	{}
 };
 #endif
