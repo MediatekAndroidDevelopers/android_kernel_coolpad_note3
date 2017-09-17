@@ -74,6 +74,10 @@ else
     ccflags-y += -DCFG_TC10_FEATURE=0
 endif
 
+ifeq ($(CONFIG_MTK_AOSP_TETHERING), y)
+    ccflags-y += -DCFG_USE_AOSP_TETHERING_NAME
+endif
+
 MTK_SRAM_SIZE_OPTION=0
 ifeq ($(CONFIG_ARCH_MT6755), y)
     MTK_SRAM_SIZE_OPTION=2
@@ -300,4 +304,3 @@ $(MODULE_NAME)-objs  += $(NIC_OBJS)
 $(MODULE_NAME)-objs  += $(OS_OBJS)
 $(MODULE_NAME)-objs  += $(HIF_OBJS)
 $(MODULE_NAME)-objs  += $(MGMT_OBJS)
-

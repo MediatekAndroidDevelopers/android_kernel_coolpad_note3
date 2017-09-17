@@ -13,6 +13,10 @@ ifeq ($(CONFIG_MTK_TC10_FEATURE), y)
     ccflags-y += -DCFG_USE_AOSP_TETHERING_NAME
 endif
 
+ifeq ($(CONFIG_MTK_AOSP_TETHERING), y)
+    ccflags-y += -DCFG_USE_AOSP_TETHERING_NAME
+endif
+
 ccflags-y += \
 	-I$(src)/../common/common_main/include \
 	-I$(src)/../common/common_main/linux/include
