@@ -277,7 +277,7 @@ endif
 # ---------------------------------------------------
 # FW customization
 # ---------------------------------------------------
-FW_CUSTOMIZATION = y
+FW_CUSTOMIZATION = n
 ifeq ($(FW_CUSTOMIZATION), y)
     ifneq ($(wildcard $(FWCFG_DIR)fw_config.c),)
         COMMON_OBJS += $(MTK_PROJECT)/fw_config.o

@@ -76,7 +76,7 @@
 #if CFG_SUPPORT_THERMO_THROTTLING
 static P_GLUE_INFO_T g_prGlueInfo_proc;
 #endif
-#if FW_CFG_SUPPORT
+#ifdef FW_CFG_SUPPORT
 static P_GLUE_INFO_T gprGlueInfo;
 #endif
 
