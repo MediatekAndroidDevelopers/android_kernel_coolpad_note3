@@ -29,6 +29,7 @@
 #include "ddp_rdma.h"
 #include "ddp_rdma_ex.h"
 #include "ddp_ovl.h"
+#include "ddp_debug.h"
 
 #include "disp_log.h"
 #include "ddp_info.h"

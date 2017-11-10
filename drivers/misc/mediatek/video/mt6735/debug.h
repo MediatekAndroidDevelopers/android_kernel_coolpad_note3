@@ -147,8 +147,6 @@ void _debug_fps_meter(unsigned long mva, unsigned long va, unsigned int w, unsig
 		      unsigned int linepitch, unsigned int color, unsigned int layerid,
 		      unsigned int bufidx);
 
-int get_ovl1_to_mem_on(void);
-
 #endif				/* MTKFB_DBG */
 
 #endif				/* __MTKFB_DEBUG_H */

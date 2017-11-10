@@ -23,6 +23,7 @@
 
 #include "disp_debug.h"
 #include "disp_utils.h"
+#include "disp_log.h"
 
 #include "ddp_dump.h"
 #include "ddp_path.h"

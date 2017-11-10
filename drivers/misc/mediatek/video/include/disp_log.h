@@ -20,10 +20,6 @@
 #include "disp_debug.h"
 #include "disp_drv_platform.h"
 
-#if defined(COMMON_DISP_LOG)
-#include "mtkfb_debug.h"
-#endif
-
 /*
  * Display has 7 log level:
  *    0 - ERROR_LEVEL, only error log use this level

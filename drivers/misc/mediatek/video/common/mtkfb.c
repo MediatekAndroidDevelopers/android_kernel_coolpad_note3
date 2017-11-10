@@ -37,9 +37,7 @@
 #include <linux/dma-mapping.h>
 #if defined(COMMON_DISP_LOG)
 #include "disp_log.h"
-#include "disp_debug.h"
 #include "disp_recorder.h"
-#include "mtkfb_debug.h"
 #else
 #include "debug.h"
 #include "ddp_log.h"
@@ -2714,7 +2712,6 @@ int __init mtkfb_init(void)
 	/* FIXME: find definition */
 	PanelMaster_Init();
 
-	DBG_Init();
 	mtkfb_ipo_init();
 exit:
 	MSG_FUNC_LEAVE();
@@ -2736,8 +2733,6 @@ static void __exit mtkfb_cleanup(void)
 
 	/* FIXME: find definition of PanelMaster_Deinit */
 	/* PanelMaster_Deinit(); */
-
-	DBG_Deinit();
 
 	MSG_FUNC_LEAVE();
 }

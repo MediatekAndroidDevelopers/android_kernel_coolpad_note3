@@ -21,7 +21,6 @@
 
 #if defined(COMMON_DISP_LOG)
 #include "disp_recorder.h"
-#include "mtkfb_debug.h"
 #else
 #include "display_recorder.h"
 #endif

@@ -142,4 +142,3 @@ ccflags-y += -DMET_USER_EVENT_SUPPORT
 ifeq ($(CONFIG_CUSTOM_KERNEL_HDMI), "MT8193")
 ccflags-y +=    -DHDMI_MT8193_SUPPORT
 endif
-

@@ -30,9 +30,7 @@
 
 #if defined(COMMON_DISP_LOG)
 #include "disp_log.h"
-#include "disp_debug.h"
 #include "disp_recorder.h"
-#include "mtkfb_debug.h"
 #else
 #include "debug.h"
 #include "ddp_log.h"

@@ -2451,10 +2451,8 @@ void DSI_set_cmdq_subV3(DISP_MODULE_ENUM module, cmdqRecHandle cmdq,
 			}
 
 			if (force_update) {
-				MMProfileLog(MTKFB_MMP_Events.DSICmd, MMProfileFlagStart);
 				DSI_Start(module, cmdq);
 				DSI_WaitForNotBusy(module, cmdq);
-				MMProfileLog(MTKFB_MMP_Events.DSICmd, MMProfileFlagEnd);
 			}
 		}
 	} while (++index < size);

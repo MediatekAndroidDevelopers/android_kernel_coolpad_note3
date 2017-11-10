@@ -392,8 +392,7 @@ void ddp_mmp_ovl_layer(OVL_CONFIG_STRUCT *pLayer, unsigned int down_sample_x,
 			Bitmap.bpp = 32;
 			break;
 		default:
-			DISPERR("ddp_mmp_ovl_layer(), unknown fmt=0x%x, %s, dump raw\n", pLayer->fmt,
-			       disp_get_fmt_name(pLayer->fmt));
+			DISPERR("ddp_mmp_ovl_layer(), unknown fmt=0x%x, dump raw\n", pLayer->fmt);
 			raw = 1;
 		}
 

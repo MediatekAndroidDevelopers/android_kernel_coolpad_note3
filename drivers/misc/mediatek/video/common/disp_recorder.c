@@ -24,7 +24,6 @@
 #include <mt-plat/met_drv.h>
 
 #include "ddp_mmp.h"
-#include "disp_debug.h"
 
 #include "disp_log.h"
 
@@ -32,6 +31,7 @@
 #include "disp_utils.h"
 #include "mtkfb_info.h"
 #include "mtkfb.h"
+#include "ddp_debug.h"
 #include "ddp_info.h"
 #include "ddp_hal.h"
 #include "ddp_dump.h"

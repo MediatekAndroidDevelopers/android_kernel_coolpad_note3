@@ -53,6 +53,7 @@
 
 #include "disp_debug.h"
 #include "disp_lcm.h"
+#include "disp_log.h"
 #include "disp_utils.h"
 
 #include "ddp_hal.h"
@@ -421,14 +422,6 @@ int _ioctl_create_session(unsigned long arg)
 		}
 
 		DISPMSG("allocate dc buffer success\n");
-	}
-#endif
-
-#if !defined(OVL_TIME_SHARING)
-	if ((config.type == DISP_SESSION_MEMORY) && (get_ovl1_to_mem_on() == false)) {
-		DISPMSG("[FB]: _ioctl_create_session! line:%d  %d\n", __LINE__,
-			get_ovl1_to_mem_on());
-		return -EFAULT;
 	}
 #endif
 

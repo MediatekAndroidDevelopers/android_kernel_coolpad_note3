@@ -78,10 +78,6 @@
 #include "ddp_path.h"
 #include "disp_log.h"
 
-/* for sysfs */
-#include <linux/kobject.h>
-#include <linux/sysfs.h>
-
 
 #define DISP_DEVNAME "DISPSYS"
 
@@ -91,56 +87,6 @@ typedef struct {
 	struct list_head testList;
 	spinlock_t node_lock;
 } disp_node_struct;
-
-
-static struct kobject kdispobj;
-
-/*****************************************************************************/
-/* sysfs for access information */
-/* --------------------------------------// */
-static ssize_t disp_kobj_show(struct kobject *kobj, struct attribute *attr, char *buffer)
-{
-	int size = 0x0;
-
-	if (0 == strcmp(attr->name, "dbg1"))
-		size = ddp_dump_reg_to_buf(2, (unsigned long *)buffer);	/* DISP_MODULE_RDMA */
-	else if (0 == strcmp(attr->name, "dbg2"))
-		size = ddp_dump_reg_to_buf(1, (unsigned long *)buffer);	/* DISP_MODULE_OVL */
-	else if (0 == strcmp(attr->name, "dbg3"))
-		size = ddp_dump_reg_to_buf(0, (unsigned long *)buffer);	/* DISP_MODULE_WDMA0 */
-	else if (0 == strcmp(attr->name, "dbg4"))
-		size = ddp_dump_lcm_param_to_buf(0, (unsigned long *)buffer); /* DISP_MODULE_LCM */
-
-	return size;
-}
-
-/* --------------------------------------// */
-
-static struct kobj_type disp_kobj_ktype = {
-	.sysfs_ops = &(const struct sysfs_ops){
-		.show = disp_kobj_show,
-		.store = NULL
-	},
-	.default_attrs = (struct attribute *[]){
-		&(struct attribute){
-			.name = "dbg1",	/* disp, dbg1 */
-			.mode = S_IRUGO
-		},
-		&(struct attribute){
-			.name = "dbg2",	/* disp, dbg2 */
-			.mode = S_IRUGO
-		},
-		&(struct attribute){
-			.name = "dbg3",	/* disp, dbg3 */
-			.mode = S_IRUGO
-		},
-		&(struct attribute){
-			.name = "dbg4",	/* disp, dbg4 */
-			.mode = S_IRUGO
-		},
-		NULL
-	}
-};
 
 #if defined(CONFIG_TRUSTONIC_TEE_SUPPORT) && defined(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT)
 
@@ -894,23 +840,11 @@ static int __init disp_probe_1(void)
 		DISP_REG_SET_FIELD(0, PWM0_APB_TX_ERROR, DISP_REG_CONFIG_MMSYS_INTEN, 1);
 	}
 
-	/* sysfs */
-	/*not necessary */
-/*     DISPMSG("sysfs disp +");*/
-	/* add kobject */
-	if (kobject_init_and_add(&kdispobj, &disp_kobj_ktype, NULL, "disp") < 0) {
-		DISPERR("fail to add disp\n");
-		return -ENOMEM;
-	}
-
 	return 0;
 }
 
 static int disp_remove(struct platform_device *pdev)
 {
-	/* sysfs */
-	kobject_put(&kdispobj);
-
 #if defined(CONFIG_TRUSTONIC_TEE_SUPPORT) && defined(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT)
 	misc_deregister(&disp_misc_dev);
 #endif
