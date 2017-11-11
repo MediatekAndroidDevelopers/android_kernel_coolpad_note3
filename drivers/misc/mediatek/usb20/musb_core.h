@@ -48,21 +48,24 @@
 #include "musb.h"
 #include <linux/wakelock.h>
 #include <linux/version.h>
+#ifdef CONFIG_MEDIATEK_SOLUTION
+#include "aee.h"
+#endif
 
 /* data type used from mt_typdefs.h, mt_typedefs.h is removed now */
 typedef enum {
 	KAL_FALSE = 0,
-	KAL_TRUE  = 1,
+	KAL_TRUE = 1,
 } kal_bool;
 #ifndef TRUE
-  #define TRUE  true
+#define TRUE  true
 #endif
-typedef unsigned int    kal_uint32;
-typedef  uint8_t kal_uint8;
+typedef unsigned int kal_uint32;
+typedef uint8_t kal_uint8;
 
 /* data type and MACRO used from mt_typdefs.h for UART USB SWITCH */
-typedef unsigned char   UINT8;
-typedef unsigned int    UINT32;
+typedef unsigned char UINT8;
+typedef unsigned int UINT32;
 
 #define WRITE_REGISTER_UINT32(reg, val)	((*(volatile UINT32 * const)(reg)) = (val))
 #define READ_REGISTER_UINT8(reg)	((*(volatile UINT8 * const)(reg)))
@@ -88,17 +91,15 @@ struct musb;
 struct musb_hw_ep;
 struct musb_ep;
 extern volatile bool usb_is_host;
-extern int musb_skip_charge_detect;
+extern int musb_fake_CDP;
 extern int musb_is_shutting;
+extern int musb_fake_disc;
+extern int musb_connect_legacy;
 extern int musb_removed;
-extern int musb_epx_transfer_allowed;
-
-extern struct usb_ep *ep_in;
-extern struct usb_ep *ep_out;
-extern int bitdebug_enabled;
-extern unsigned bitdebug_writeCnt;
-extern unsigned bitdebug_readCnt;
-
+extern int kernel_init_done;
+extern int musb_force_on;
+extern int musb_host_dynamic_fifo;
+extern int musb_host_dynamic_fifo_usage_msk;
 extern unsigned musb_uart_debug;
 extern struct musb *mtk_musb;
 extern bool mtk_usb_power;
@@ -196,6 +197,14 @@ extern void musb_host_tx(struct musb *, u8);
 extern void musb_host_rx(struct musb *, u8);
 
 /****************************** CONSTANTS ********************************/
+
+#ifdef CONFIG_MTK_MUSB_CARPLAY_SUPPORT
+extern bool apple;
+extern void musb_id_pin_work_device(void);
+extern void musb_id_pin_work_host(struct work_struct *data);
+extern int send_switch_cmd(void);
+#endif
+
 
 
 #ifndef MUSB_C_NUM_EPS
@@ -385,7 +394,9 @@ struct musb {
 	struct work_struct otg_notifier_work;
 	u16 hwvers;
 	struct delayed_work id_pin_work;
-
+#ifdef CONFIG_MTK_MUSB_CARPLAY_SUPPORT
+	struct delayed_work carplay_work;
+#endif
 	struct musb_fifo_cfg *fifo_cfg;
 	unsigned fifo_cfg_size;
 	struct musb_fifo_cfg *fifo_cfg_host;
@@ -538,6 +549,7 @@ struct musb {
 	bool srp_drvvbus;
 	enum usb_otg_event otg_event;
 #endif
+	struct workqueue_struct *st_wq;
 };
 
 static inline struct musb *gadget_to_musb(struct usb_gadget *g)
@@ -664,4 +676,5 @@ static inline const char *otg_state_string(enum usb_otg_state state)
 }
 #endif
 
+extern void register_usb_hal_disconnect_check(void (*function)(void));
 #endif				/* __MUSB_CORE_H__ */

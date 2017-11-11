@@ -116,20 +116,66 @@
 struct device_node *dts_np;
 #endif
 
+static void (*usb_hal_disconnect_check_fptr)(void);
+void usb_hal_disconnect_check(void)
+{
+	if (usb_hal_disconnect_check_fptr)
+		usb_hal_disconnect_check_fptr();
+}
+void register_usb_hal_disconnect_check(void (*function)(void))
+{
+	usb_hal_disconnect_check_fptr = function;
+}
+
+int musb_connect_legacy = 1;
 int musb_is_shutting = 0;
-int musb_skip_charge_detect = 0;
+int musb_fake_disc = 0;
+int musb_fake_CDP = 0;
 int musb_removed = 0;
-int musb_epx_transfer_allowed = 0;
+/* kernel_init_done should be set in early-init stage through init.$platform.usb.rc */
+int kernel_init_done = 0;
+int musb_force_on = 0;
+int musb_host_dynamic_fifo = 1;
+int musb_host_dynamic_fifo_usage_msk;
+module_param(musb_connect_legacy, int, 0644);
 module_param(musb_is_shutting, int, 0644);
-module_param(musb_skip_charge_detect, int, 0644);
+module_param(musb_fake_disc, int, 0644);
+module_param(musb_fake_CDP, int, 0644);
 module_param(musb_removed, int, 0644);
-module_param(musb_epx_transfer_allowed, int, 0644);
+module_param(kernel_init_done, int, 0644);
+module_param(musb_host_dynamic_fifo, int, 0644);
+module_param(musb_host_dynamic_fifo_usage_msk, int, 0644);
+#ifdef MUSB_QMU_SUPPORT_HOST
+int mtk_host_qmu_concurrent = 1;
+int mtk_host_qmu_pipe_msk = (PIPE_ISOCHRONOUS + 1) /* | (PIPE_BULK + 1) | (PIPE_INTERRUPT+ 1) */;
+int mtk_host_active_dev_cnt;
+unsigned int low_power_timer_total_trigger_cnt;
+unsigned int low_power_timer_total_wake_cnt;
+int low_power_timer_mode;
+int low_power_timer_mode2_option;
+module_param(mtk_host_qmu_concurrent, int, 0644);
+module_param(mtk_host_qmu_pipe_msk, int, 0644);
+module_param(mtk_host_active_dev_cnt, int, 0644);
+module_param(low_power_timer_total_trigger_cnt, int, 0644);
+module_param(low_power_timer_total_wake_cnt, int, 0644);
+module_param(low_power_timer_mode, int, 0644);
+module_param(low_power_timer_mode2_option, int, 0644);
+#endif
 #ifdef MUSB_QMU_SUPPORT
 #include "musb_qmu.h"
+u32 dma_burst_setting, qmu_ioc_setting;
+struct musb_hw_ep *qmu_isoc_ep;
 int mtk_qmu_dbg_level = LOG_WARN;
-u32 dma_burst_setting;
+int mtk_qmu_max_gpd_num;
+int isoc_ep_start_idx = 6;
+int isoc_ep_gpd_count = 260;
+module_param(mtk_qmu_dbg_level, int, 0644);
+module_param(mtk_qmu_max_gpd_num, int, 0644);
+module_param(isoc_ep_start_idx, int, 0644);
+module_param(isoc_ep_gpd_count, int, 0644);
 #ifdef QMU_TASKLET
 int qmu_tasklet = 1;
+module_param(qmu_tasklet, int, 0644);
 void qmu_done_tasklet(unsigned long data)
 {
 	unsigned int qmu_val;
@@ -567,8 +613,8 @@ static void musb_otg_timer_func(unsigned long data)
 		musb->otg_event = OTG_EVENT_DEV_CONN_TMOUT;
 		schedule_work(&musb->otg_notifier_work);
 #endif
-		/*musb_platform_set_vbus(musb, 0);*/
-		vbus_off = true; /* I2C can't use with spin_lock */
+		/*musb_platform_set_vbus(musb, 0); */
+		vbus_off = true;	/* I2C can't use with spin_lock */
 
 		musb->xceiv->state = OTG_STATE_A_WAIT_VFALL;
 		break;
@@ -680,7 +726,6 @@ void musb_hnp_stop(struct musb *musb)
 	musb->port1_status &= ~(USB_PORT_STAT_C_CONNECTION << 16);
 }
 EXPORT_SYMBOL_GPL(musb_hnp_stop);
-
 /*
  * Interrupt Service Routine to record USB "global" interrupts.
  * Since these do not happen often and signify things of
@@ -692,6 +737,9 @@ EXPORT_SYMBOL_GPL(musb_hnp_stop);
  * @param devctl
  * @param power
  */
+static struct musb_fifo_cfg ep0_cfg = {
+	.style = MUSB_FIFO_RXTX, .maxpacket = 64, .ep_mode = EP_CONT,
+};
 
 static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb, u8 devctl)
 {
@@ -900,6 +948,8 @@ static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb, u8 devctl)
 		DBG(0, "SUSPEND (%s) devctl %02x\n", otg_state_string(musb->xceiv->state), devctl);
 		handled = IRQ_HANDLED;
 
+		usb_hal_disconnect_check();
+
 		switch (musb->xceiv->state) {
 		case OTG_STATE_A_PERIPHERAL:
 			/* We also come here if the cable is removed, since
@@ -955,6 +1005,13 @@ static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb, u8 devctl)
 			musb->is_active = 0;
 			break;
 		}
+#ifdef CONFIG_MTK_MUSB_CARPLAY_SUPPORT
+		if ((apple) && (int_usb & MUSB_INTR_SUSPEND)) {
+			apple = false;
+			DBG(0, "musb stage0 irq musb_id_pin_work_host\n");
+			schedule_delayed_work(&mtk_musb->carplay_work, 1000 * HZ / 1000);
+		}
+#endif
 	}
 #if defined(CONFIG_USBIF_COMPLIANCE)
 	DBG(0, "After SUSPEND Before CONNECT: int_usb: 0x%x, (%s)\n",
@@ -965,13 +1022,14 @@ static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb, u8 devctl)
 		struct usb_hcd *hcd = musb_to_hcd(musb);
 
 		DBG(0, "MUSB_INTR_CONNECT (%s)\n", otg_state_string(musb->xceiv->state));
-		musb_epx_transfer_allowed = 1;
 
 		handled = IRQ_HANDLED;
 		musb->is_active = 1;
 
 		musb->ep0_stage = MUSB_EP0_START;
 
+		if (musb_host_dynamic_fifo)
+			musb_host_dynamic_fifo_usage_msk = 0;
 #ifdef MUSB_QMU_SUPPORT
 		musb_disable_q_all(musb);
 #endif
@@ -1045,7 +1103,6 @@ b_host:
 	if ((int_usb & MUSB_INTR_DISCONNECT) && !musb->ignore_disconnect) {
 		DBG(0, "DISCONNECT (%s) as %s, devctl %02x\n",
 		    otg_state_string(musb->xceiv->state), MUSB_MODE(musb), devctl);
-		musb_epx_transfer_allowed = 0;
 		handled = IRQ_HANDLED;
 		musb->is_active = 0;
 #ifdef MUSB_QMU_SUPPORT
@@ -1097,7 +1154,6 @@ b_host:
 		handled = IRQ_HANDLED;
 
 		DBG(0, "MUSB_INTR_RESET (%s)\n", otg_state_string(musb->xceiv->state));
-		musb_epx_transfer_allowed = 1;
 
 		if ((devctl & MUSB_DEVCTL_HM) != 0) {
 			/*
@@ -1268,17 +1324,30 @@ void musb_start(struct musb *musb)
 
 	musb_writeb(regs, MUSB_INTRUSBE, intrusbe);
 
-	if (musb_speed) {
-		/* put into basic highspeed mode and start session */
-		musb_writeb(regs, MUSB_POWER, MUSB_POWER_SOFTCONN | MUSB_POWER_HSENAB
-			    /* ENSUSPEND wedges tusb */
-			    | MUSB_POWER_ENSUSPEND);
+	if (musb_connect_legacy) {
+		if (musb_speed) {
+			/* put into basic highspeed mode and start session */
+			musb_writeb(regs, MUSB_POWER, MUSB_POWER_SOFTCONN | MUSB_POWER_HSENAB
+					/* ENSUSPEND wedges tusb */
+					| MUSB_POWER_ENSUSPEND);
+		} else {
+			/* put into basic fullspeed mode and start session */
+			musb_writeb(regs, MUSB_POWER, MUSB_POWER_SOFTCONN
+					/* ENSUSPEND wedges tusb */
+					| MUSB_POWER_ENSUSPEND);
+		}
 	} else {
-		/* put into basic fullspeed mode and start session */
-		musb_writeb(regs, MUSB_POWER, MUSB_POWER_SOFTCONN
-			    /* ENSUSPEND wedges tusb */
-			    | MUSB_POWER_ENSUSPEND);
+		u8 val = MUSB_POWER_ENSUSPEND;
+
+		if (musb_speed)
+			val |= MUSB_POWER_HSENAB;
+		if (musb->softconnect) {
+			DBG(0, "add softconn\n");
+			val |= MUSB_POWER_SOFTCONN;
+		}
+		musb_writeb(regs, MUSB_POWER, val);
 	}
+
 	musb->is_active = 1;
 }
 
@@ -1314,10 +1383,21 @@ static void gadget_stop(struct musb *musb)
 	power &= ~MUSB_POWER_SOFTCONN;
 	musb_writeb(musb->mregs, MUSB_POWER, power);
 
-	/* notify gadget driver */
+	/* notify gadget driver, g.speed judge is very important */
 	if (musb->g.speed != USB_SPEED_UNKNOWN) {
-		if (musb->gadget_driver && musb->gadget_driver->disconnect)
+		DBG(0, "musb->gadget_driver:%p\n", musb->gadget_driver);
+		if (musb->gadget_driver && musb->gadget_driver->disconnect) {
+			DBG(0, "musb->gadget_driver->disconnect:%p\n", musb->gadget_driver->disconnect);
+			/* align musb_g_disconnect */
+			if (!musb_connect_legacy)
+				spin_unlock(&musb->lock);
+
 			musb->gadget_driver->disconnect(&musb->g);
+
+			/* align musb_g_disconnect */
+			if (!musb_connect_legacy)
+				spin_lock(&musb->lock);
+		}
 		musb->g.speed = USB_SPEED_UNKNOWN;
 	}
 }
@@ -1463,10 +1543,6 @@ static int fifo_setup(struct musb *musb, struct musb_hw_ep *hw_ep,
 	return offset + (maxpacket << ((c_size & MUSB_FIFOSZ_DPB) ? 1 : 0));
 }
 
-static struct musb_fifo_cfg ep0_cfg = {
-	.style = MUSB_FIFO_RXTX, .maxpacket = 64, .ep_mode = EP_CONT,
-};
-
 static int ep_config_from_table(struct musb *musb)
 {
 	const struct musb_fifo_cfg *cfg;
@@ -1584,6 +1660,9 @@ int ep_config_from_table_for_host(struct musb *musb)
 	int offset;
 	struct musb_hw_ep *hw_ep = musb->endpoints;
 
+	if (musb_host_dynamic_fifo)
+		musb_host_dynamic_fifo_usage_msk = 0;
+
 	if (musb->fifo_cfg_host) {
 		cfg = musb->fifo_cfg_host;
 		n = musb->fifo_cfg_host_size;
@@ -1604,11 +1683,15 @@ int ep_config_from_table_for_host(struct musb *musb)
 			DBG(0, "%s: invalid ep %d\n", musb_driver_name, epn);
 			return -EINVAL;
 		}
-		offset = fifo_setup_for_host(musb, hw_ep + epn, cfg++, offset);
-		if (offset < 0) {
-			DBG(0, "%s: mem overrun, ep %d\n", musb_driver_name, epn);
-			return offset;
+
+		if (!musb_host_dynamic_fifo) {
+			offset = fifo_setup_for_host(musb, hw_ep + epn, cfg++, offset);
+			if (offset < 0) {
+				DBG(0, "%s: mem overrun, ep %d\n", musb_driver_name, epn);
+				return offset;
+			}
 		}
+
 		epn++;
 		musb->nr_endpoints = max(epn, musb->nr_endpoints);
 	}
@@ -1817,7 +1900,6 @@ irqreturn_t musb_interrupt(struct musb *musb)
 	if (musb->int_usb)
 		retval |= musb_stage0_irq(musb, musb->int_usb, devctl);
 
-
 	/* "stage 1" is handling endpoint irqs */
 
 	/* handle endpoint 0 first */
@@ -1828,11 +1910,8 @@ irqreturn_t musb_interrupt(struct musb *musb)
 			retval |= musb_g_ep0_irq(musb);
 	}
 
-	/* check this to skip unnecessary interrupt handle after disconnect in host mode*/
-	if (unlikely(!musb_epx_transfer_allowed)) {
-		DBG(0, "!musb_epx_transfer_allowed\n");
+	if (unlikely(!musb->power))
 		return IRQ_HANDLED;
-	}
 
 #ifdef MUSB_QMU_SUPPORT
 	/* process generic queue interrupt */
@@ -2101,6 +2180,7 @@ static struct musb *allocate_instance(struct device *dev,
 	musb->config = config;
 	musb->is_ready = false;
 	musb->in_ipo_off = false;
+	musb->st_wq = create_singlethread_workqueue("usb20_st_wq");
 
 	BUG_ON(musb->config->num_eps > MUSB_C_NUM_EPS);
 	for (epnum = 0, ep = musb->endpoints; epnum < musb->config->num_eps; epnum++, ep++) {
@@ -2474,6 +2554,7 @@ static void musb_save_context(struct musb *musb)
 
 #ifdef MUSB_QMU_SUPPORT
 	dma_burst_setting = musb_readl(musb->mregs, 0x204);
+	qmu_ioc_setting = musb_readl((musb->mregs + MUSB_QISAR), 0x30);
 #endif
 
 	musb->context.power = musb_readb(musb_base, MUSB_POWER);
@@ -2517,6 +2598,7 @@ static void musb_restore_context(struct musb *musb)
 
 #ifdef MUSB_QMU_SUPPORT
 	musb_writel(musb->mregs, 0x204, dma_burst_setting);
+	musb_writel((musb->mregs + MUSB_QISAR), 0x30, qmu_ioc_setting);
 #endif
 
 	musb_writeb(musb_base, MUSB_POWER, musb->context.power);
@@ -2615,7 +2697,7 @@ static struct platform_driver musb_driver = {
 	.driver = {
 		   .name = (char *)musb_driver_name,
 		   .bus = &platform_bus_type,
-#ifndef CONFIG_MACH_MT2701
+#if (!defined(CONFIG_MACH_MT2701)) && (!defined(CONFIG_ARCH_MT7623))
 		   .of_match_table = apusb_of_ids,
 #endif
 		   .owner = THIS_MODULE,
@@ -2636,20 +2718,85 @@ static int __init musb_init(void)
 	pr_info("%s: version " MUSB_VERSION ", ?dma?, otg (peripheral+host)\n", musb_driver_name);
 	return platform_driver_register(&musb_driver);
 }
-
-#ifdef CONFIG_MACH_MT2701
 module_init(musb_init);
-#else
-fs_initcall(musb_init);
-#endif
+
 static void __exit musb_cleanup(void)
 {
 	platform_driver_unregister(&musb_driver);
 }
 module_exit(musb_cleanup);
-#ifdef MUSB_QMU_SUPPORT
-module_param(mtk_qmu_dbg_level, int, 0644);
-#ifdef QMU_TASKLET
-module_param(qmu_tasklet, int, 0644);
-#endif
-#endif
+
+static int usb_test_wakelock_inited;
+static struct wake_lock usb_test_wakelock;
+static int option;
+static int set_option(const char *val, const struct kernel_param *kp)
+{
+	int local_option;
+	int rv;
+
+	/* update module parameter */
+	rv = param_set_int(val, kp);
+	if (rv)
+		return rv;
+
+	/* update local_option */
+	rv = kstrtoint(val, 10, &local_option);
+	if (rv != 0)
+		return rv;
+
+	DBG(0, "option:%d, local_option:%d\n", option, local_option);
+
+	switch (local_option) {
+	case 0:
+		DBG(0, "wake_lock usb_test_wakelock\n");
+		if (!usb_test_wakelock_inited) {
+			DBG(0, "%s wake_lock_init\n", __func__);
+			wake_lock_init(&usb_test_wakelock, WAKE_LOCK_SUSPEND, "usb.test.lock");
+			usb_test_wakelock_inited = 1;
+		}
+		wake_lock(&usb_test_wakelock);
+		break;
+	case 1:
+		DBG(0, "wake_unlock usb_test_wakelock\n");
+		wake_unlock(&usb_test_wakelock);
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+static struct kernel_param_ops option_param_ops = {
+	.set = set_option,
+	.get = param_get_int,
+};
+module_param_cb(option, &option_param_ops, &option, 0644);
+static int set_musb_force_on(const char *val, const struct kernel_param *kp)
+{
+	int option;
+	int rv;
+
+	rv = kstrtoint(val, 10, &option);
+	if (rv != 0)
+		return rv;
+
+	DBG(0, "musb_force_on:%d, option:%d\n", musb_force_on, option);
+	if (option == 0 || option == 1) {
+		DBG(0, "update to %d\n", option);
+		musb_force_on = option;
+	}
+
+	switch (option) {
+	case 2:
+		DBG(0, "trigger reconnect\n");
+		mt_usb_connect();
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+static struct kernel_param_ops musb_force_on_param_ops = {
+	.set = set_musb_force_on,
+	.get = param_get_int,
+};
+module_param_cb(musb_force_on, &musb_force_on_param_ops, &musb_force_on, 0644);
