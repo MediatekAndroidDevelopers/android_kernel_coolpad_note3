@@ -3141,6 +3141,11 @@ static ssize_t msdc_debug_proc_write_DVT(struct file *file, const char __user *b
 	int scan_ret;
 	struct msdc_host *host;
 
+	if (count == 0)
+		return -1;
+	if (count > 255)
+		count = 255;
+
 	ret = copy_from_user(cmd_buf, buf, count);
 	if (ret < 0)
 		return -1;
@@ -3158,11 +3163,11 @@ static ssize_t msdc_debug_proc_write_DVT(struct file *file, const char __user *b
 	}
 
 	host = mtk_msdc_host[i_msdc_id];
-
-	pr_err("[****SD_Debug****] Start Online Tuning DVT test\n");
-	mt_msdc_online_tuning_test(host, 0, 0, 0);
-	pr_err("[****SD_Debug****] Finish Online Tuning DVT test\n");
-
+	if (host) {
+		pr_err("[****SD_Debug****] Start Online Tuning DVT test\n");
+		mt_msdc_online_tuning_test(host, 0, 0, 0);
+		pr_err("[****SD_Debug****] Finish Online Tuning DVT test\n");
+	}
 	return count;
 }
 #endif				/* ONLINE_TUNING_DVTTEST*/
@@ -3352,6 +3357,11 @@ static ssize_t msdc_voltage_proc_write(struct file *file, const char __user *buf
 	int ret;
 	int scan_ret;
 
+	if (count == 0)
+		return -1;
+	if (count > 255)
+		count = 255;
+
 	ret = copy_from_user(cmd_buf, buf, count);
 	if (ret < 0)
 		return -1;
@@ -3404,16 +3414,21 @@ static const struct file_operations msdc_voltage_flag_fops = {
 #endif
 int msdc_debug_proc_init(void)
 {
+#if 0
 	struct proc_dir_entry *prEntry;
 	struct proc_dir_entry *tune;
 	struct proc_dir_entry *tune_flag;
+#endif
 	kuid_t uid;
 	kgid_t gid;
+#if 0
 #ifdef MSDC_HQA
 	struct proc_dir_entry *voltage_flag;
 #endif
+#endif
 	uid = make_kuid(&init_user_ns, 0);
 	gid = make_kgid(&init_user_ns, 1001);
+#if 0
 #ifndef USER_BUILD_KERNEL
 	prEntry = proc_create("msdc_debug", 0660, NULL, &msdc_proc_fops);
 #else
@@ -3491,6 +3506,7 @@ int msdc_debug_proc_init(void)
 	} else {
 		pr_err("[%s]: failed to create /proc/msdc_voltage_flag\n", __func__);
 	}
+#endif
 #endif
 	return 0;
 }
