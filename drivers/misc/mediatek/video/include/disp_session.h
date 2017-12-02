@@ -1,8 +1,21 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __DISP_SESSION_H
 #define __DISP_SESSION_H
+#include <linux/types.h>
 
 #define DISP_SESSION_DEVICE	"mtk_disp_mgr"
-
 
 #define DISP_NO_ION_FD                 ((int)(~0U>>1))
 #define DISP_NO_USE_LAEYR_ID           ((int)(~0U>>1))
@@ -12,8 +25,9 @@
 #define DISP_SESSION_TYPE(id) (((id)>>16)&0xff)
 #define DISP_SESSION_DEV(id) ((id)&0xff)
 #define MAKE_DISP_SESSION(type, dev) (unsigned int)((type)<<16 | (dev))
+#define MAX_OVL_CONFIG 12
 
-
+#define RSZ_RES_LIST_NUM 4
 
 /* /============================================================================= */
 /* structure declarations */
@@ -28,7 +42,8 @@ typedef enum {
 	DISP_IF_HDMI = 7,
 	DISP_IF_HDMI_SMARTBOOK,
 	DISP_IF_MHL,
-	DISP_IF_EPD
+	DISP_IF_EPD,
+	DISP_IF_SLIMPORT
 } DISP_IF_TYPE;
 
 typedef enum {
@@ -68,6 +83,11 @@ typedef enum {
 	DISP_FORMAT_UYVY = MAKE_DISP_FORMAT_ID(13, 2),
 	DISP_FORMAT_YUV420_P = MAKE_DISP_FORMAT_ID(14, 2),
 	DISP_FORMAT_YV12 = MAKE_DISP_FORMAT_ID(16, 1),	/* BPP = 1.5 */
+	DISP_FORMAT_PARGB8888 = MAKE_DISP_FORMAT_ID(17, 4),
+	DISP_FORMAT_PABGR8888 = MAKE_DISP_FORMAT_ID(18, 4),
+	DISP_FORMAT_PRGBA8888 = MAKE_DISP_FORMAT_ID(19, 4),
+	DISP_FORMAT_PBGRA8888 = MAKE_DISP_FORMAT_ID(20, 4),
+	DISP_FORMAT_DIM = MAKE_DISP_FORMAT_ID(21, 0),
 	DISP_FORMAT_BPP_MASK = 0xFF,
 } DISP_FORMAT;
 
@@ -178,39 +198,55 @@ typedef struct {
 	int lcm_fps;
 } disp_session_vsync_config;
 
+struct layer_dirty_roi {
+	uint16_t dirty_x;
+	uint16_t dirty_y;
+	uint16_t dirty_w;
+	uint16_t dirty_h;
+};
+
 typedef struct disp_input_config_t {
-	unsigned int layer_id;
-	unsigned int layer_enable;
-	DISP_BUFFER_SOURCE buffer_source;
 	void *src_base_addr;
 	void *src_phy_addr;
-	unsigned int src_direct_link;
+	DISP_BUFFER_SOURCE buffer_source;
+	DISP_BUFFER_TYPE security;
 	DISP_FORMAT src_fmt;
-	unsigned int src_use_color_key;
-	unsigned int src_color_key;
-	unsigned int src_pitch;
-	unsigned int src_offset_x, src_offset_y;
-	unsigned int src_width, src_height;
+	DISP_ALPHA_TYPE src_alpha;
+	DISP_ALPHA_TYPE dst_alpha;
+	DISP_YUV_RANGE_ENUM yuv_range;
 
-	unsigned int tgt_offset_x, tgt_offset_y;
-	unsigned int tgt_width, tgt_height;
 	DISP_ORIENTATION layer_rotation;
 	DISP_LAYER_TYPE layer_type;
 	DISP_ORIENTATION video_rotation;
 
-	unsigned int isTdshp;	/* set to 1, will go through tdshp first, then layer blending, then to color */
+	uint32_t next_buff_idx;
+	uint32_t src_fence_fd;	/* fence to be waited before using this buffer. -1 if invalid */
+	void *src_fence_struct;	/* fence struct of src_fence_fd, used in kernel */
 
-	unsigned int next_buff_idx;
-	int identity;
-	int connected_type;
-	DISP_BUFFER_TYPE security;
-	unsigned int alpha_enable;
-	unsigned int alpha;
-	unsigned int sur_aen;
-	DISP_ALPHA_TYPE src_alpha;
-	DISP_ALPHA_TYPE dst_alpha;
-	unsigned int frm_sequence;
-	DISP_YUV_RANGE_ENUM yuv_range;
+	uint32_t src_color_key;
+	uint32_t frm_sequence;
+
+	void *dirty_roi_addr;
+	uint16_t dirty_roi_num;
+
+	uint16_t src_pitch;
+	uint16_t src_offset_x, src_offset_y;
+	uint16_t src_width, src_height;
+	uint16_t tgt_offset_x, tgt_offset_y;
+	uint16_t tgt_width, tgt_height;
+
+	uint8_t alpha_enable;
+	uint8_t alpha;
+	uint8_t sur_aen;
+	uint8_t src_use_color_key;
+	uint8_t layer_id;
+	uint8_t layer_enable;
+	uint8_t src_direct_link;
+
+	uint8_t isTdshp;
+	uint8_t identity;
+	uint8_t connected_type;
+	uint8_t ext_sel_layer;
 } disp_input_config;
 
 typedef struct disp_output_config_t {
@@ -226,6 +262,8 @@ typedef struct disp_output_config_t {
 	DISP_BUFFER_TYPE security;
 	unsigned int buff_idx;
 	unsigned int interface_idx;
+	unsigned int src_fence_fd;	/* fence to be waited before using this buffer. -1 if invalid */
+	void *src_fence_struct;		/* fence struct of src_fence_fd, used in kernel */
 	unsigned int frm_sequence;
 } disp_output_config;
 
@@ -233,7 +271,7 @@ typedef struct disp_session_input_config_t {
 	DISP_SESSION_USER setter;
 	unsigned int session_id;
 	unsigned int config_layer_num;
-	disp_input_config config[8];
+	disp_input_config config[MAX_OVL_CONFIG];
 } disp_session_input_config;
 
 typedef struct disp_session_output_config_t {
@@ -252,7 +290,7 @@ struct disp_frame_cfg_t {
 
 	/* input config */
 	unsigned int input_layer_num;
-	disp_input_config input_cfg[8];
+	disp_input_config input_cfg[12];
 	unsigned int overlap_layer_num;
 
 	/* constant layer */
@@ -266,6 +304,8 @@ struct disp_frame_cfg_t {
 	/* trigger config */
 	DISP_MODE mode;
 	unsigned int present_fence_idx;
+	unsigned int prev_present_fence_fd;
+	void *prev_present_fence_struct;
 	EXTD_TRIGGER_MODE tigger_mode;
 	DISP_SESSION_USER user;
 };
@@ -280,8 +320,10 @@ typedef struct disp_session_info_t {
 	unsigned int displayFormat;
 	DISP_IF_MODE displayMode;
 	unsigned int vsyncFPS;
-	unsigned int physicalWidth;
-	unsigned int physicalHeight;
+	unsigned int physicalWidth;	/* length: mm, for legacy use */
+	unsigned int physicalHeight;	/* length: mm, for legacy use */
+	unsigned int physicalWidthUm;	/* length: um, for more precise precision */
+	unsigned int physicalHeightUm;	/* length: um, for more precise precision */
 	unsigned int isConnected;
 	unsigned int isHDCPSupported;
 	unsigned int isOVLDisabled;
@@ -338,6 +380,11 @@ typedef enum {
 
 typedef enum {
 	DISP_FEATURE_TIME_SHARING = 0x00000001,
+	DISP_FEATURE_HRT = 0x00000002,
+	DISP_FEATURE_PARTIAL = 0x00000004,
+	DISP_FEATURE_FENCE_WAIT = 0x00000008,
+	DISP_FEATURE_RSZ = 0x00000010,
+	DISP_FEATURE_NO_PARGB = 0x00000020,
 } DISP_FEATURE;
 
 typedef struct disp_caps_t {
@@ -350,12 +397,51 @@ typedef struct disp_caps_t {
 	unsigned int disp_feature;
 	int is_support_frame_cfg_ioctl;
 	int is_output_rotated;
+	int lcm_degree;
+	/* resizer input resolution list
+	 * format:
+	 *   sequence from big resolution to small
+	 *   portrait width first then height
+	 */
+	unsigned int rsz_in_res_list[RSZ_RES_LIST_NUM][2];
 } disp_caps_info;
 
 typedef struct disp_session_buf_t {
 	unsigned int session_id;
 	unsigned int buf_hnd[3];
 } disp_session_buf_info;
+
+enum LAYERING_CAPS {
+	LAYERING_OVL_ONLY = 0x00000001,
+};
+
+typedef struct layer_config_t {
+	unsigned int ovl_id;
+	DISP_FORMAT src_fmt;
+	unsigned int dst_offset_x, dst_offset_y;
+	unsigned int dst_width, dst_height;
+	unsigned int ext_sel_layer;
+	unsigned int src_width, src_height;
+	unsigned int layer_caps;
+} layer_config;
+
+typedef struct disp_layer_info_t {
+	layer_config * input_config[2];
+	int disp_mode[2];
+	int layer_num[2];
+	int gles_head[2];
+	int gles_tail[2];
+	int hrt_num;
+} disp_layer_info;
+
+enum DISP_SCENARIO {
+	DISP_SCENARIO_NORMAL,
+	DISP_SCENARIO_SELF_REFRESH,
+};
+struct disp_scenario_config_t {
+	unsigned int session_id;
+	unsigned int scenario;
+};
 
 /* IOCTL commands. */
 #define DISP_IOW(num, dtype)     _IOW('O', num, dtype)
@@ -364,31 +450,34 @@ typedef struct disp_session_buf_t {
 #define DISP_IO(num)             _IO('O', num)
 
 
-#define	DISP_IOCTL_CREATE_SESSION				DISP_IOW(201, disp_session_config)
-#define	DISP_IOCTL_DESTROY_SESSION				DISP_IOW(202, disp_session_config)
-#define	DISP_IOCTL_TRIGGER_SESSION				DISP_IOW(203, disp_session_config)
+#define	DISP_IOCTL_CREATE_SESSION			DISP_IOW(201, disp_session_config)
+#define	DISP_IOCTL_DESTROY_SESSION			DISP_IOW(202, disp_session_config)
+#define	DISP_IOCTL_TRIGGER_SESSION			DISP_IOW(203, disp_session_config)
 #define	DISP_IOCTL_PREPARE_INPUT_BUFFER			DISP_IOW(204, disp_buffer_info)
 #define	DISP_IOCTL_PREPARE_OUTPUT_BUFFER		DISP_IOW(205, disp_buffer_info)
-#define	DISP_IOCTL_SET_INPUT_BUFFER				DISP_IOW(206, disp_session_input_config)
+#define	DISP_IOCTL_SET_INPUT_BUFFER			DISP_IOW(206, disp_session_input_config)
 #define	DISP_IOCTL_SET_OUTPUT_BUFFER			DISP_IOW(207, disp_session_output_config)
-#define	DISP_IOCTL_GET_SESSION_INFO				DISP_IOW(208, disp_session_info)
+#define	DISP_IOCTL_GET_SESSION_INFO			DISP_IOW(208, disp_session_info)
 
 
-#define	DISP_IOCTL_SET_SESSION_MODE				DISP_IOW(209, disp_session_config)
-#define	DISP_IOCTL_GET_SESSION_MODE				DISP_IOW(210, disp_session_config)
-#define	DISP_IOCTL_SET_SESSION_TYPE				DISP_IOW(211, disp_session_config)
-#define	DISP_IOCTL_GET_SESSION_TYPE				DISP_IOW(212, disp_session_config)
-#define	DISP_IOCTL_WAIT_FOR_VSYNC				DISP_IOW(213, disp_session_vsync_config)
+#define	DISP_IOCTL_SET_SESSION_MODE			DISP_IOW(209, disp_session_config)
+#define	DISP_IOCTL_GET_SESSION_MODE			DISP_IOW(210, disp_session_config)
+#define	DISP_IOCTL_SET_SESSION_TYPE			DISP_IOW(211, disp_session_config)
+#define	DISP_IOCTL_GET_SESSION_TYPE			DISP_IOW(212, disp_session_config)
+#define	DISP_IOCTL_WAIT_FOR_VSYNC			DISP_IOW(213, disp_session_vsync_config)
 #define	DISP_IOCTL_SET_MAX_LAYER_NUM			DISP_IOW(214, disp_session_layer_num_config)
-#define	DISP_IOCTL_SET_VSYNC_FPS				DISP_IOW(215, unsigned int)
+#define	DISP_IOCTL_GET_VSYNC_FPS			DISP_IOW(215, unsigned int)
+#define	DISP_IOCTL_SET_VSYNC_FPS			DISP_IOW(216, unsigned int)
+#define	DISP_IOCTL_GET_PRESENT_FENCE			DISP_IOW(217, disp_present_fence)
 
-#define		DISP_IOCTL_GET_PRESENT_FENCE			DISP_IOW(216, disp_present_fence)
-
-#define DISP_IOCTL_GET_IS_DRIVER_SUSPEND		DISP_IOW(217, unsigned int)
-#define DISP_IOCTL_GET_DISPLAY_CAPS			DISP_IOW(218, disp_caps_info)
-#define DISP_IOCTL_INSERT_SESSION_BUFFERS			DISP_IOW(219, disp_session_buf_info)
-#define	DISP_IOCTL_FRAME_CONFIG			DISP_IOW(220, disp_session_output_config)
-
+#define DISP_IOCTL_GET_IS_DRIVER_SUSPEND		DISP_IOW(218, unsigned int)
+#define DISP_IOCTL_GET_DISPLAY_CAPS			DISP_IOW(219, disp_caps_info)
+#define DISP_IOCTL_INSERT_SESSION_BUFFERS		DISP_IOW(220, disp_session_buf_info)
+#define	DISP_IOCTL_FRAME_CONFIG				DISP_IOW(221, disp_session_output_config)
+#define DISP_IOCTL_QUERY_VALID_LAYER			DISP_IOW(222, disp_layer_info)
+#define	DISP_IOCTL_SET_SCENARIO				DISP_IOW(223, struct disp_scenario_config_t)
+#define	DISP_IOCTL_WAIT_ALL_JOBS_DONE			DISP_IOW(224, unsigned int)
+#define	DISP_IOCTL_SCREEN_FREEZE			DISP_IOW(225, unsigned int)
 
 #ifdef __KERNEL__
 

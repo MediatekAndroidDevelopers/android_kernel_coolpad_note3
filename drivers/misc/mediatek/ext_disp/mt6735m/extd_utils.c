@@ -1,3 +1,15 @@
+/*
+* Copyright (C) 2016 MediaTek Inc.
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2 as
+* published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+*/
 #include <linux/semaphore.h>
 #include <linux/mutex.h>
 #include <linux/time.h>
@@ -18,11 +30,7 @@ int extd_mutex_init(struct mutex *m)
 
 int extd_sw_mutex_lock(struct mutex *m)
 {
-	if (down_interruptible(&extd_mutex)) {
-		pr_debug("DISP/ " "Can't get semaphore in %s()\n", __func__);
-		return -1;
-	}
-
+	down(&extd_mutex);
 	return 0;
 }
 

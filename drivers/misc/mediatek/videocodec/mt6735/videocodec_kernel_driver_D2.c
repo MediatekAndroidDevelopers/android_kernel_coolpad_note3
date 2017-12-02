@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -39,7 +52,6 @@
 #include <asm/io.h>
 #include <asm/sizes.h>
 #include "val_types_private.h"
-#include "hal_types_private.h"
 #include "val_api_private.h"
 #include "val_log.h"
 #include "drv_api.h"
@@ -85,7 +97,7 @@ static VAL_TIME_T gMMDFVFSLastLockTime;
 static VAL_TIME_T gMMDFVFSMonitorEndTime;
 static VAL_UINT32_T gHWLockInterval;
 static VAL_INT32_T gHWLockMaxDuration;
-static VAL_INT32_T gMMDVFSHandle = 0;
+static VAL_INT32_T gMMDVFSHandle;
 
 VAL_UINT32_T TimeDiffMs(VAL_TIME_T timeOld, VAL_TIME_T timeNew)
 {
@@ -106,15 +118,15 @@ void SendDvfsRequest(int level)
 	int ret = 0;
 
 	if (level == MMDVFS_VOLTAGE_LOW) {
-		MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] SendDvfsRequest(MMDVFS_VOLTAGE_LOW)\n");
+		MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] SendDvfsRequest(MMDVFS_VOLTAGE_LOW)\n");
 		clkmux_sel(MT_MUX_VDEC, 3, "MMDVFS_VOLTAGE_LOW");	/* 156MHz */
 		ret = mmdvfs_set_step(SMI_BWC_SCEN_VP, MMDVFS_VOLTAGE_LOW);
 	} else if (level == MMDVFS_VOLTAGE_HIGH) {
-		MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] SendDvfsRequest(MMDVFS_VOLTAGE_HIGH)\n");
+		MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] SendDvfsRequest(MMDVFS_VOLTAGE_HIGH)\n");
 		ret = mmdvfs_set_step(SMI_BWC_SCEN_VP, MMDVFS_VOLTAGE_HIGH);
 		clkmux_sel(MT_MUX_VDEC, 4, "MMDVFS_VOLTAGE_HIGH");	/* 273MHz */
 	} else {
-		MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] @@ OOPS: level = %d\n", level);
+		MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] @@ OOPS: level = %d\n", level);
 	}
 
 	if (0 != ret)
@@ -128,7 +140,7 @@ void VdecDvfsBegin(void)
 	gHWLockInterval = 0;
 	gFirstDvfsLock = VAL_TRUE;
 	gHWLockMaxDuration = 0;
-	MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] @@ VdecDvfsBegin\n");
+	MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] @@ VdecDvfsBegin\n");
 	/* eVideoGetTimeOfDay(&gMMDFVFSMonitorStartTime, sizeof(VAL_TIME_T)); */
 }
 
@@ -140,9 +152,9 @@ VAL_UINT32_T VdecDvfsGetMonitorDuration(void)
 
 void VdecDvfsEnd(int level)
 {
-	MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] VdecDVFS monitor %dms, decoded %d frames, total time %d\n",
+	MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] VdecDVFS monitor %dms, decoded %d frames, total time %d\n",
 		MONITOR_DURATION_MS, gMMDFVFSMonitorCounts, gHWLockInterval);
-	MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] max duration %d, target lv %d\n", gHWLockMaxDuration, level);
+	MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] max duration %d, target lv %d\n", gHWLockMaxDuration, level);
 	gMMDFVFSMonitorStarts = VAL_FALSE;
 	gMMDFVFSMonitorCounts = 0;
 	gHWLockInterval = 0;
@@ -158,10 +170,10 @@ VAL_UINT32_T VdecDvfsStep(void)
 	_diff = TimeDiffMs(gMMDFVFSLastLockTime, _now);
 
 	if (_diff > MMDVFS_UPPER_BOUND_MS) {
-		/* MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC][VdecDvfsStep][Info] gMMDFVFSLastLockTime(%d, %d)\n",
+		MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC][VdecDvfsStep][Info] gMMDFVFSLastLockTime(%d, %d)\n",
 		     gMMDFVFSLastLockTime.u4Sec, gMMDFVFSLastLockTime.u4uSec);
-		MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC][VdecDvfsStep][Info] _now(%d, %d), diff(%d)\n",
-		     _now.u4Sec, _now.u4uSec, _diff); */
+		MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC][VdecDvfsStep][Info] _now(%d, %d), diff(%d)\n",
+		     _now.u4Sec, _now.u4uSec, _diff);
 		_diff = MMDVFS_UPPER_BOUND_MS;
 	}
 
@@ -1012,7 +1024,7 @@ static long vcodec_lockhw_enc_while_loop(VAL_HW_LOCK_T *prHWLock, VAL_BOOL_T *pb
 		}
 
 		if (VAL_TRUE == *pbLockedHW) {
-			MODULE_MFV_LOGI
+			MODULE_MFV_LOGD
 				("VCODEC_LOCKHW, Lock ok grVcodecEncHWLock.pvHandle = 0x%lx, va:%lx, type:%d",
 				 (VAL_ULONG_T) grVcodecEncHWLock.pvHandle,
 				 (VAL_ULONG_T) prHWLock->pvHandle,
@@ -1033,6 +1045,7 @@ static long vcodec_lockhw(VAL_HW_LOCK_T rHWLock)
 	VAL_TIME_T rCurTime;
 	VAL_UINT32_T u4TimeInterval;
 	VAL_ULONG_T ulFlags, ulFlagsLockHW;
+
 	MODULE_MFV_LOGD("[VCODEC] LOCKHW eDriverType = %d\n", rHWLock.eDriverType);
 	eValRet = VAL_RESULT_INVALID_ISR;
 	if (rHWLock.eDriverType == VAL_DRIVER_TYPE_MP4_DEC ||
@@ -1042,7 +1055,7 @@ static long vcodec_lockhw(VAL_HW_LOCK_T rHWLock)
 	    rHWLock.eDriverType == VAL_DRIVER_TYPE_VC1_DEC ||
 	    rHWLock.eDriverType == VAL_DRIVER_TYPE_VC1_ADV_DEC ||
 	    rHWLock.eDriverType == VAL_DRIVER_TYPE_VP8_DEC ||
-            rHWLock.eDriverType == VAL_DRIVER_TYPE_MMDVFS) {
+	    rHWLock.eDriverType == VAL_DRIVER_TYPE_MMDVFS) {
 		while (bLockedHW == VAL_FALSE) {
 			mutex_lock(&DecHWLockEventTimeoutLock);
 			if (DecHWLockEvent.u4TimeoutMs == 1) {
@@ -1211,7 +1224,7 @@ static long vcodec_unlockhw(VAL_HW_LOCK_T rHWLock)
 	    rHWLock.eDriverType == VAL_DRIVER_TYPE_VC1_DEC ||
 	    rHWLock.eDriverType == VAL_DRIVER_TYPE_VC1_ADV_DEC ||
 	    rHWLock.eDriverType == VAL_DRIVER_TYPE_VP8_DEC ||
-            rHWLock.eDriverType == VAL_DRIVER_TYPE_MMDVFS) {
+	    rHWLock.eDriverType == VAL_DRIVER_TYPE_MMDVFS) {
 		mutex_lock(&VdecHWLock);
 		if (grVcodecDecHWLock.pvHandle ==
 		    (VAL_VOID_T *) pmem_user_v2p_video((VAL_ULONG_T)
@@ -1284,12 +1297,14 @@ static long vcodec_unlockhw(VAL_HW_LOCK_T rHWLock)
 		return -EFAULT;
 	}
 	MODULE_MFV_LOGD("VCODEC_UNLOCKHW - tid = %d\n", current->pid);
-        return 0;
+	return 0;
 }
 
-int vdec_suspend_before_mmsysclk_switch(void){
+int vdec_suspend_before_mmsysclk_switch(void)
+{
 	/* Waiting for the frame done and suspend vdec jobs*/
 	VAL_HW_LOCK_T rLock;
+
 	rLock.eDriverType = VAL_DRIVER_TYPE_MMDVFS;
 	/* kenel VA won't overlap with any PA, still unique key */
 	rLock.pvHandle = &gMMDVFSHandle;
@@ -1298,9 +1313,11 @@ int vdec_suspend_before_mmsysclk_switch(void){
 	return 1; /* Success, return 0 to notify suspension failed*/
 }
 
-int vdec_resume_after_mmsysclk_switch(void){
+int vdec_resume_after_mmsysclk_switch(void)
+{
 	/* Waiting for the frame done and suspend vdec jobs*/
 	VAL_HW_LOCK_T rLock;
+
 	rLock.eDriverType = VAL_DRIVER_TYPE_MMDVFS;
 	/* kenel VA won't overlap with any PA, still unique key */
 	rLock.pvHandle = &gMMDVFSHandle;
@@ -1312,7 +1329,7 @@ int vdec_resume_after_mmsysclk_switch(void){
 static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	VAL_LONG_T ret;
-	VAL_UINT8_T *user_data_addr;
+	VAL_UINT8_T __user *user_data_addr;
 	VAL_RESULT_T eValRet;
 	VAL_RESULT_T eValHWLockRet = VAL_RESULT_INVALID_ISR;
 	VAL_ULONG_T ulFlags, ulFlagsISR;
@@ -1576,8 +1593,7 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 				return -EFAULT;
 			}
 			ret = vcodec_lockhw(rHWLock);
-			if (0 != ret)
-			{
+			if (0 != ret) {
 				/* return error code or let it fall through to end */
 				return ret;
 			}
@@ -1595,8 +1611,7 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 				return -EFAULT;
 			}
 			ret = vcodec_unlockhw(rHWLock);
-			if (0 != ret)
-			{
+			if (0 != ret) {
 				/* return error code or let it fall through to end */
 				return ret;
 			}
@@ -1755,7 +1770,7 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 					     pmem_user_v2p_video((unsigned long)val_isr.pvHandle));
 
 					mutex_lock(&VencHWLock);
-					MODULE_MFV_LOGI
+					MODULE_MFV_LOGD
 					    ("VCODEC_WAITISR, grVcodecEncHWLock.pvHandle = 0x%lx\n",
 					     (VAL_ULONG_T) grVcodecEncHWLock.pvHandle);
 					if (grVcodecEncHWLock.pvHandle ==
@@ -1889,11 +1904,13 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 			VAL_UINT32_T ret, i, pa_u4HWIsCompleted, pa_u4HWIsTimeout;
 			VAL_ULONG_T addr_pa;
 
+			memset(oal_mem_status, 0, sizeof(oal_mem_status));
+
 			MODULE_MFV_LOGD("VCODEC_INITHWLOCK + - tid = %d\n", current->pid);
 
 			/* //////////// Start to get content */
 			/* //////////// take VAL_VCODEC_OAL_HW_REGISTER_T content */
-			user_data_addr = (VAL_UINT8_T *) arg;
+			user_data_addr = (VAL_UINT8_T __user *) arg;
 			ret =
 			    copy_from_user(&hwoal_reg, user_data_addr,
 					   sizeof(VAL_VCODEC_OAL_HW_REGISTER_T));
@@ -1946,13 +1963,20 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 			/* ret = copy_from_user
 			   (&oal_mem_status[0], ((VAL_VCODEC_OAL_HW_REGISTER_T *)user_data_addr)->pHWStatus,
 			   hwoal_reg.u4NumOfRegister*sizeof(VAL_VCODEC_OAL_MEM_STAUTS_T)); */
-			ret =
-			    copy_from_user(&oal_mem_status[0], hwoal_reg.pHWStatus,
-					   hwoal_reg.u4NumOfRegister *
-					   sizeof(VAL_VCODEC_OAL_MEM_STAUTS_T));
-			context->u4NumOfRegister = hwoal_reg.u4NumOfRegister;
-			MODULE_MFV_LOGW("[VCODEC_INITHWLOCK] ToTal %d u4NumOfRegister\n",
-				 hwoal_reg.u4NumOfRegister);
+			if (hwoal_reg.pHWStatus != NULL &&
+				hwoal_reg.u4NumOfRegister >= 0 &&
+				hwoal_reg.u4NumOfRegister <= OALMEM_STATUS_NUM) {
+				memcpy(&oal_mem_status[0], hwoal_reg.pHWStatus,
+						hwoal_reg.u4NumOfRegister *
+						sizeof(VAL_VCODEC_OAL_MEM_STAUTS_T));
+				context->u4NumOfRegister = hwoal_reg.u4NumOfRegister;
+				MODULE_MFV_LOGW("[VCODEC_INITHWLOCK] ToTal %d u4NumOfRegister\n",
+					 hwoal_reg.u4NumOfRegister);
+			} else {
+				MODULE_MFV_LOGE
+				    ("[ERROR] Check pHWStatus or u4NumOfRegister(%u)\n",
+					 hwoal_reg.u4NumOfRegister);
+			}
 
 			if (hwoal_reg.u4NumOfRegister != 0) {
 				u8TempKPA = context->pa_Oal_HW_mem_reg;
@@ -1985,7 +2009,8 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 			for (i = 0; i < hwoal_reg.u4NumOfRegister; i++) {
 				VAL_ULONG_T kva;
 
-				MODULE_MFV_LOGE("[VCODEC][REG_INFO_1] [%d] 0x%lx 0x%x\n", i,
+				MODULE_MFV_LOGD
+					("[VCODEC][REG_INFO_1] [%d] 0x%lx 0x%x\n", i,
 					 oal_mem_status[i].u4ReadAddr,
 					 oal_mem_status[i].u4ReadData);
 
@@ -1994,7 +2019,8 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 				spin_unlock_irqrestore(&OalHWContextLock, ulFlags);
 				kva = (VAL_ULONG_T) ioremap(addr_pa, 8);	/* need to remap addr + data addr */
 				spin_lock_irqsave(&OalHWContextLock, ulFlags);
-				MODULE_MFV_LOGE("[VCODEC][REG_INFO_2] [%d] pa = 0x%lx  kva = 0x%lx\n", i,
+				MODULE_MFV_LOGD
+					("[VCODEC][REG_INFO_2] [%d] pa = 0x%lx  kva = 0x%lx\n", i,
 					 addr_pa, kva);
 				context->oalmem_status[i].u4ReadAddr = kva;	/* oal_mem_status[i].u4ReadAddr; */
 			}
@@ -2024,6 +2050,7 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 		}
 		break;
 
+#if 0
 	case VCODEC_GET_CPU_LOADING_INFO:
 		{
 			VAL_UINT8_T *user_data_addr;
@@ -2053,6 +2080,7 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 			MODULE_MFV_LOGD("VCODEC_GET_CPU_LOADING_INFO -\n");
 		}
 		break;
+#endif
 
 	case VCODEC_GET_CORE_LOADING:
 		{
@@ -2068,16 +2096,19 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 				     ret);
 				return -EFAULT;
 			}
+
+			if (rTempCoreLoading.CPUid < 0) {
+				MODULE_MFV_LOGE("[ERROR] rTempCoreLoading.CPUid < 0\n");
+				return -EFAULT;
+			}
+
 			if (rTempCoreLoading.CPUid > num_possible_cpus()) {
 				MODULE_MFV_LOGE("[ERROR] rTempCoreLoading.CPUid(%d) > num_possible_cpus(%d)\n",
 				rTempCoreLoading.CPUid, num_possible_cpus());
 				return -EFAULT;
 			}
-			if (rTempCoreLoading.CPUid < 0) {
-				MODULE_MFV_LOGE("[ERROR] rTempCoreLoading.CPUid < 0\n");
-				return -EFAULT;
-			}
-				rTempCoreLoading.Loading = get_cpu_load(rTempCoreLoading.CPUid);
+
+			rTempCoreLoading.Loading = get_cpu_load(rTempCoreLoading.CPUid);
 			ret =
 			    copy_to_user(user_data_addr, &rTempCoreLoading,
 					 sizeof(VAL_VCODEC_CORE_LOADING_T));
@@ -2713,7 +2744,7 @@ static int vcodec_open(struct inode *inode, struct file *file)
 static int vcodec_flush(struct file *file, fl_owner_t id)
 {
 	MODULE_MFV_LOGD("vcodec_flush, curr_tid =%d\n", current->pid);
-	/* MODULE_MFV_LOGE("vcodec_flush pid = %d, Driver_Open_Count %d\n", current->pid, Driver_Open_Count); */
+	MODULE_MFV_LOGD("vcodec_flush pid = %d, Driver_Open_Count %d\n", current->pid, Driver_Open_Count);
 
 	return 0;
 }
@@ -2903,9 +2934,9 @@ static int vcodec_mmap(struct file *file, struct vm_area_struct *vma)
 	}
 #endif
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-	/* MODULE_MFV_LOGE("[VCODEC][mmap] vma->start 0x%lx, vma->end 0x%lx, vma->pgoff 0x%lx, pfn: 0x%lx\n",
+	MODULE_MFV_LOGD("[VCODEC][mmap] vma->start 0x%lx, vma->end 0x%lx, vma->pgoff 0x%lx, pfn: 0x%lx\n",
 		 (VAL_ULONG_T) vma->vm_start, (VAL_ULONG_T) vma->vm_end,
-		 (VAL_ULONG_T) vma->vm_pgoff, pfn); */
+		 (VAL_ULONG_T) vma->vm_pgoff, pfn);
 	if (remap_pfn_range
 	    (vma, vma->vm_start, vma->vm_pgoff, vma->vm_end - vma->vm_start, vma->vm_page_prot)) {
 		return -EAGAIN;

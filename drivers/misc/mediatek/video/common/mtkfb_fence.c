@@ -1,5 +1,16 @@
-#include "disp_drv_log.h"
-#include "ion_drv.h"
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
@@ -7,18 +18,26 @@
 
 #include <linux/wait.h>
 #include <linux/file.h>
-
+#include "ion_drv.h"
 #include "m4u.h"
 #include "mtk_sync.h"
-#include "debug.h"
-#include "ddp_ovl.h"
 #include "mtkfb_fence.h"
 #include "ddp_path.h"
 #include "disp_drv_platform.h"
-#include "display_recorder.h"
 #include "ddp_mmp.h"
 #include "primary_display.h"
 #include "mtk_disp_mgr.h"
+
+#if defined(COMMON_DISP_LOG)
+#include "disp_log.h"
+#include "disp_recorder.h"
+#else
+#include "debug.h"
+#include "ddp_log.h"
+#include "disp_drv_log.h"
+#include "display_recorder.h"
+#endif
+
 /************************* log*********************/
 
 static bool mtkfb_fence_on;
@@ -69,6 +88,23 @@ static DEFINE_MUTEX(fence_buffer_mutex);
 
 disp_session_sync_info _disp_fence_context[MAX_SESSION_COUNT];
 
+#if 0 /* defined but not used */
+static const char *session_mode_spy(unsigned int mode)
+{
+	switch (mode) {
+	case DISP_SESSION_DIRECT_LINK_MODE:
+		return "DIRECT_LINK";
+	case DISP_SESSION_DIRECT_LINK_MIRROR_MODE:
+		return "DIRECT_LINK_MIRROR";
+	case DISP_SESSION_DECOUPLE_MODE:
+		return "DECOUPLE";
+	case DISP_SESSION_DECOUPLE_MIRROR_MODE:
+		return "DECOUPLE_MIRROR";
+	default:
+		return "UNKNOWN";
+	}
+}
+#endif
 
 static disp_session_sync_info *_get_session_sync_info(unsigned int session_id)
 {
@@ -181,7 +217,7 @@ static disp_session_sync_info *_get_session_sync_info(unsigned int session_id)
 				layer_info->inited = 1;
 				layer_info->timeline = timeline_create(name);
 				if (layer_info->timeline)
-					DISPDBG("create timeline success: %s=%p, layer_info=%p\n",
+					DISPMSG("create timeline success: %s=%p, layer_info=%p\n",
 						name, layer_info->timeline, layer_info);
 
 				INIT_LIST_HEAD(&layer_info->buf_list);
@@ -325,7 +361,8 @@ static void mtkfb_ion_free_handle(struct ion_client *client, struct ion_handle *
 static size_t mtkfb_ion_phys_mmu_addr(struct ion_client *client, struct ion_handle *handle,
 				      unsigned int *mva)
 {
-	size_t size;
+	size_t size = 0;
+	ion_phys_addr_t phy_addr = 0;
 
 	if (!ion_client) {
 		MTKFB_FENCE_ERR("invalid ion client!\n");
@@ -334,7 +371,8 @@ static size_t mtkfb_ion_phys_mmu_addr(struct ion_client *client, struct ion_hand
 	if (!handle)
 		return 0;
 
-	ion_phys(client, handle, (ion_phys_addr_t *) mva, &size);
+	ion_phys(client, handle, &phy_addr, &size);
+	*mva = (unsigned int)phy_addr;
 	MTKFB_FENCE_LOG("alloc mmu addr hnd=0x%p,mva=0x%08x\n", handle, (unsigned int)*mva);
 	return size;
 }
@@ -458,13 +496,13 @@ unsigned int mtkfb_query_release_idx(unsigned int session_id, unsigned int layer
 
 			/* /idx = buf->idx; */
 			buf->buf_state = reg_updated;
-			DISPDBG("mva query1:idx=0x%x, mva=0x%lx, off=%d st %x\n", buf->idx,
+			DISPMSG("mva query1:idx=0x%x, mva=0x%lx, off=%d st %x\n", buf->idx,
 				buf->mva, buf->mva_offset, buf->buf_state);
 		} else if (((buf->mva + buf->mva_offset) != phy_addr)
 			   && (buf->buf_state == reg_updated)) {
 
 			buf->buf_state = read_done;
-			DISPDBG("mva query2:idx=0x%x, mva=0x%lx, off=%d st %x\n", buf->idx,
+			DISPMSG("mva query2:idx=0x%x, mva=0x%lx, off=%d st %x\n", buf->idx,
 				buf->mva, buf->mva_offset, buf->buf_state);
 		} else if ((phy_addr == 0) && (buf->buf_state > create)) {
 			buf->buf_state = read_done;
@@ -552,7 +590,6 @@ unsigned int mtkfb_query_idx_by_ticket(unsigned int session_id, unsigned int lay
 	return idx;
 }
 
-#ifdef CONFIG_MTK_HDMI_3D_SUPPORT
 bool mtkfb_update_buf_info_new(unsigned int session_id, unsigned int mva_offset, disp_input_config *buf_info)
 {
 	struct mtkfb_fence_buf_info *buf;
@@ -592,7 +629,6 @@ unsigned int mtkfb_query_buf_info(unsigned int session_id, unsigned int layer_id
 		int query_type)
 {
 	struct mtkfb_fence_buf_info *buf = NULL;
-	struct mtkfb_fence_buf_info *pre_buf = NULL;
 	disp_session_sync_info *session_info;
 	disp_sync_info *layer_info;
 	int query_info = 0;
@@ -608,14 +644,16 @@ unsigned int mtkfb_query_buf_info(unsigned int session_id, unsigned int layer_id
 	list_for_each_entry(buf, &layer_info->buf_list, list) {
 		DISPMSG("mva updatenn layer%d, idx=0x%x, mva=0x%08lx-%x py %lx\n", layer_id,
 				buf->idx, buf->mva, buf->layer_type, phy_addr);
-		if ((buf->mva + buf->mva_offset) == phy_addr)
+		if ((buf->mva + buf->mva_offset) == phy_addr) {
 			query_info = buf->layer_type;
+			mutex_unlock(&layer_info->sync_lock);
+			return query_info;
+		}
 	}
 	mutex_unlock(&layer_info->sync_lock);
 
 	return query_info;
 }
-#endif
 
 #endif				/* #if defined (MTK_FB_ION_SUPPORT) */
 
@@ -720,9 +758,7 @@ struct mtkfb_fence_buf_info *mtkfb_init_buf_info(struct mtkfb_fence_buf_info *bu
 	buf->idx = 0;
 	buf->mva = 0;
 	buf->cache_sync = 0;
-#ifdef CONFIG_MTK_HDMI_3D_SUPPORT
 	buf->layer_type = 0;
-#endif
 	return buf;
 }
 
@@ -867,8 +903,8 @@ void mtkfb_release_session_fence(unsigned int session_id)
 {
 	disp_session_sync_info *session_sync_info = NULL;
 	int i;
-	session_sync_info = _get_session_sync_info(session_id);
 
+	session_sync_info = _get_session_sync_info(session_id);
 	if (session_sync_info == NULL) {
 		DISPERR("layer_info is null\n");
 		return;

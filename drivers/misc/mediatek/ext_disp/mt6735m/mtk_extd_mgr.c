@@ -1,3 +1,15 @@
+/*
+* Copyright (C) 2016 MediaTek Inc.
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2 as
+* published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+*/
 /*****************************************************************************/
 /*****************************************************************************/
 #include <linux/mm.h>
@@ -234,7 +246,8 @@ static long mtk_extd_mgr_ioctl(struct file *file, unsigned int cmd, unsigned lon
 		}
 	case MTK_HDMI_IS_FORCE_AWAKE:
 		{
-			/* r = hdmi_is_force_awake(argp); */
+			if (extd_driver[DEV_MHL] && extd_driver[DEV_MHL]->is_force_awake)
+				r = extd_driver[DEV_MHL]->is_force_awake(argp);
 			break;
 		}
 	case MTK_HDMI_GET_EDID:

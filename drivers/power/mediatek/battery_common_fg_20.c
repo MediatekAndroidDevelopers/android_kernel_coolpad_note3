@@ -2576,7 +2576,7 @@ static void mt_battery_charger_detect_check(void)
 		/* is_ta_connect = KAL_FALSE; */
 		/* ta_check_chr_type = KAL_TRUE; */
 		ta_cable_out_occur = KAL_FALSE;
-		battery_log(BAT_LOG_CRTI, "[PE+] Cable In\n");
+		battery_log(BAT_LOG_FULL, "[PE+] Cable In\n");
 #endif
 
 	} else {
@@ -3916,7 +3916,7 @@ static void battery_timer_pause(void)
 	battery_suspended = KAL_TRUE;
 	mutex_unlock(&bat_mutex);
 
-	battery_log(BAT_LOG_CRTI, "@bs=1@\n");
+	battery_log(BAT_LOG_FULL, "@bs=1@\n");
 #endif
 
 	get_monotonic_boottime(&g_bat_time_before_sleep);

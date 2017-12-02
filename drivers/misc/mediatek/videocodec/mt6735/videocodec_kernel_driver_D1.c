@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -43,7 +56,6 @@
 #include <asm/io.h>
 #include <asm/sizes.h>
 #include "val_types_private.h"
-#include "hal_types_private.h"
 #include "val_api_private.h"
 #include "val_log.h"
 #include "drv_api.h"
@@ -112,21 +124,21 @@ void SendDvfsRequest(int level)
 	int ret = 0;
 
 	if (level == MMDVFS_VOLTAGE_LOW) {
-		MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] SendDvfsRequest(MMDVFS_VOLTAGE_LOW)");
+		MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] SendDvfsRequest(MMDVFS_VOLTAGE_LOW)");
 #ifdef CONFIG_MTK_CLKMGR
 		clkmux_sel(MT_MUX_VDEC, 3, "MMDVFS_VOLTAGE_LOW");   /* 136.5MHz */
 #else
 		ret = clk_prepare_enable(clk_MT_CG_TOP_MUX_VDEC);
 		if (ret) {
 			/* print error log & error handling */
-			MODULE_MFV_LOGD("[VCODEC][ERROR] clk_MT_CG_TOP_MUX_VDEC is not enabled, ret = %d\n", ret);
+			MODULE_MFV_LOGE("[VCODEC][ERROR] clk_MT_CG_TOP_MUX_VDEC is not enabled, ret = %d\n", ret);
 		}
 		clk_set_parent(clk_MT_CG_TOP_MUX_VDEC, clk_MT_CG_TOP_SYSPLL1_D4);
 		clk_disable_unprepare(clk_MT_CG_TOP_MUX_VDEC);
 #endif
 		ret = mmdvfs_set_step(SMI_BWC_SCEN_VP, MMDVFS_VOLTAGE_LOW);
 	} else if (level == MMDVFS_VOLTAGE_HIGH) {
-		MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] SendDvfsRequest(MMDVFS_VOLTAGE_HIGH)");
+		MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] SendDvfsRequest(MMDVFS_VOLTAGE_HIGH)");
 		ret = mmdvfs_set_step(SMI_BWC_SCEN_VP, MMDVFS_VOLTAGE_HIGH);
 #ifdef CONFIG_MTK_CLKMGR
 		clkmux_sel(MT_MUX_VDEC, 1, "MMDVFS_VOLTAGE_HIGH");  /* 273MHz */
@@ -140,7 +152,7 @@ void SendDvfsRequest(int level)
 		clk_disable_unprepare(clk_MT_CG_TOP_MUX_VDEC);
 #endif
 	} else {
-		MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] OOPS: level = %d\n", level);
+		MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] OOPS: level = %d\n", level);
 	}
 
 	if (0 != ret) {
@@ -156,7 +168,7 @@ void VdecDvfsBegin(void)
 	gHWLockInterval = 0;
 	gFirstDvfsLock = VAL_TRUE;
 	gHWLockMaxDuration = 0;
-	MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] VdecDvfsBegin");
+	MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] VdecDvfsBegin");
 	/* eVideoGetTimeOfDay(&gMMDFVFSMonitorStartTime, sizeof(VAL_TIME_T)); */
 }
 
@@ -168,10 +180,10 @@ VAL_UINT32_T VdecDvfsGetMonitorDuration(void)
 
 void VdecDvfsEnd(int level)
 {
-	MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] VdecDVFS monitor %dms, decoded %d frames\n",
+	MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] VdecDVFS monitor %dms, decoded %d frames\n",
 		 MONITOR_DURATION_MS,
 		 gMMDFVFSMonitorCounts);
-	MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] total time %d, max duration %d, target lv %d\n",
+	MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] total time %d, max duration %d, target lv %d\n",
 		 gHWLockInterval,
 		 gHWLockMaxDuration,
 		 level);
@@ -210,9 +222,9 @@ void VdecDvfsAdjustment(void)
 		} else {
 			VdecDvfsStep();
 			_perc = (VAL_UINT32_T)(100 * gHWLockInterval / _monitor_duration);
-			MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] DROP_PERCENTAGE = %d, RAISE_PERCENTAGE = %d\n",
+			MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] DROP_PERCENTAGE = %d, RAISE_PERCENTAGE = %d\n",
 				 DROP_PERCENTAGE, RAISE_PERCENTAGE);
-			MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] reset monitor duration (%d ms), percent: %d\n",
+			MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] reset monitor duration (%d ms), percent: %d\n",
 				 _monitor_duration, _perc);
 			if (_perc < DROP_PERCENTAGE) {
 				SendDvfsRequest(DVFS_LOW);
@@ -235,11 +247,11 @@ void VdecDvfsMonitorStart(void)
 		VdecDvfsBegin();
 	}
 	if (VAL_TRUE == gMMDFVFSMonitorStarts) {
-		/* MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] LOCK 1\n"); */
+		MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] LOCK 1\n");
 		if (gMMDFVFSMonitorCounts > MONITOR_START_MINUS_1) {
 			if (VAL_TRUE == gFirstDvfsLock) {
 				gFirstDvfsLock = VAL_FALSE;
-				/* MODULE_MFV_LOGD("[VCODEC][MMDVFS_VDEC] LOCK 1 start monitor\n"); */
+				MODULE_MFV_LOGE("[VCODEC][MMDVFS_VDEC] LOCK 1 start monitor\n");
 				eVideoGetTimeOfDay(&gMMDFVFSMonitorStartTime, sizeof(VAL_TIME_T));
 			}
 			eVideoGetTimeOfDay(&gMMDFVFSLastLockTime, sizeof(VAL_TIME_T));
@@ -1539,6 +1551,7 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 	}
 	break;
 
+#if 0
 	case VCODEC_GET_CPU_LOADING_INFO: {
 		VAL_UINT8_T *user_data_addr;
 		VAL_VCODEC_CPU_LOADING_INFO_T _temp;
@@ -1563,6 +1576,7 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 		MODULE_MFV_LOGD("VCODEC_GET_CPU_LOADING_INFO -\n");
 	}
 	break;
+#endif
 
 	case VCODEC_GET_CORE_LOADING: {
 		MODULE_MFV_LOGD("VCODEC_GET_CORE_LOADING + - tid = %d\n", current->pid);
@@ -1573,11 +1587,18 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 			MODULE_MFV_LOGE("[ERROR] VCODEC_GET_CORE_LOADING, copy_from_user failed: %lu\n", ret);
 			return -EFAULT;
 		}
+
+		if (rTempCoreLoading.CPUid < 0) {
+			MODULE_MFV_LOGE("[ERROR] rTempCoreLoading.CPUid < 0\n");
+			return -EFAULT;
+		}
+
 		if (rTempCoreLoading.CPUid > num_possible_cpus()) {
 			MODULE_MFV_LOGE("[ERROR] rTempCoreLoading.CPUid(%d) > num_possible_cpus(%d)\n",
 			rTempCoreLoading.CPUid, num_possible_cpus());
 			return -EFAULT;
 		}
+
 		rTempCoreLoading.Loading = get_cpu_load(rTempCoreLoading.CPUid);
 		ret = copy_to_user(user_data_addr, &rTempCoreLoading, sizeof(VAL_VCODEC_CORE_LOADING_T));
 		if (ret) {
@@ -2150,7 +2171,7 @@ static int vcodec_open(struct inode *inode, struct file *file)
 static int vcodec_flush(struct file *file, fl_owner_t id)
 {
 	MODULE_MFV_LOGD("vcodec_flush, curr_tid =%d\n", current->pid);
-	/* MODULE_MFV_LOGE("vcodec_flush pid = %d, Driver_Open_Count %d\n", current->pid, Driver_Open_Count); */
+	MODULE_MFV_LOGD("vcodec_flush pid = %d, Driver_Open_Count %d\n", current->pid, Driver_Open_Count);
 
 	return 0;
 }
@@ -2301,8 +2322,8 @@ static int vcodec_mmap(struct file *file, struct vm_area_struct *vma)
 	}
 #endif
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-	/* MODULE_MFV_LOGE("[VCODEC][mmap] vma->start 0x%lx, vma->end 0x%lx, vma->pgoff 0x%lx\n",
-		 (VAL_ULONG_T)vma->vm_start, (VAL_ULONG_T)vma->vm_end, (VAL_ULONG_T)vma->vm_pgoff); */
+	MODULE_MFV_LOGD("[VCODEC][mmap] vma->start 0x%lx, vma->end 0x%lx, vma->pgoff 0x%lx\n",
+		 (VAL_ULONG_T)vma->vm_start, (VAL_ULONG_T)vma->vm_end, (VAL_ULONG_T)vma->vm_pgoff);
 	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
 			    vma->vm_end - vma->vm_start, vma->vm_page_prot)) {
 		return -EAGAIN;

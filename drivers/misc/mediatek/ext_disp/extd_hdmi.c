@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 /*****************************************************************************/
 /*****************************************************************************/
 #include "extd_info.h"
@@ -27,9 +40,15 @@
 #include <linux/atomic.h>
 #include <linux/io.h>
 
-#include <mach/irqs.h>
+#if defined(CONFIG_ARCH_MT8167)
+#ifdef CONFIG_MTK_CLKMGR
 #include <mach/mt_clkmgr.h>
+#endif
+#else
+#include <mach/irqs.h>
 #include "mach/irqs.h"
+#include <mach/mt_clkmgr.h>
+#endif
 
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
@@ -42,7 +61,11 @@
 #include "mtkfb.h"
 
 #include "mtkfb_fence.h"
+#if defined(CONFIG_ARCH_MT6755)
+#include "disp_recorder.h"
+#else
 #include "display_recorder.h"
+#endif
 
 #include "ddp_info.h"
 #include "ddp_irq.h"
@@ -84,6 +107,7 @@ static bool otg_enable_status;
 static bool hdmi_vsync_flag;
 static wait_queue_head_t hdmi_vsync_wq;
 static unsigned long hdmi_reschange = HDMI_VIDEO_RESOLUTION_NUM;
+static unsigned long force_reschange = 0xffff;
 
 static struct switch_dev hdmi_switch_data;
 static struct switch_dev hdmires_switch_data;
@@ -91,6 +115,10 @@ static struct switch_dev hdmires_switch_data;
 static struct HDMI_DRIVER *hdmi_drv;
 static struct _t_hdmi_context hdmi_context;
 static struct _t_hdmi_context *p = &hdmi_context;
+
+struct task_struct *hdmi_3d_config_task = NULL;
+wait_queue_head_t hdmi_3d_config_wq;
+atomic_t hdmi_3d_config_event = ATOMIC_INIT(0);
 
 static unsigned int hdmi_layer_num;
 static unsigned long ovl_config_address[EXTD_OVERLAY_CNT];
@@ -110,6 +138,7 @@ unsigned long hdmi_va, hdmi_mva_r;
 #endif
 
 struct HDMI_PARAMS _s_hdmi_params = { 0 };
+static int rdmafpscnt;
 
 struct HDMI_PARAMS *hdmi_params = &_s_hdmi_params;
 disp_ddp_path_config extd_dpi_params;
@@ -162,6 +191,30 @@ void hdmi_force_on(int from_uart_drv)
 		hdmi_drv->force_on(from_uart_drv);*/
 }
 
+/*params & 0xff: resolution,  params & 0xff00 : 3d support*/
+void hdmi_force_resolution(int params)
+{
+	force_reschange = params;
+	if ((force_reschange > 0xff) && (force_reschange < 0x0fff))
+		hdmi_params->is_3d_support = 1;
+	else
+		hdmi_params->is_3d_support = 0;
+
+	HDMI_LOG("hdmi_force_resolution params:0x%lx, 3d:%d\n", force_reschange, hdmi_params->is_3d_support);
+}
+
+#ifdef MM_MHL_DVFS
+#include "mmdvfs_mgr.h"
+static void hdmi_enable_dvfs(int enable)
+{
+	mmdvfs_mhl_enable(enable);
+}
+#else
+static void hdmi_enable_dvfs(int enable)
+{
+}
+#endif
+
 /* <--for debug */
 void hdmi_cable_fake_plug_in(void)
 {
@@ -170,7 +223,11 @@ void hdmi_cable_fake_plug_in(void)
 
 	if (p->is_force_disable == false) {
 		if (IS_HDMI_STANDBY()) {
+#ifdef MHL_DYNAMIC_VSYNC_OFFSET
+			ged_dvfs_vsync_offset_event_switch(GED_DVFS_VSYNC_OFFSET_MHL_EVENT, true);
+#endif
 			hdmi_resume();
+			hdmi_enable_dvfs(true);
 			/* /msleep(1000); */
 			hdmi_reschange = HDMI_VIDEO_RESOLUTION_NUM;
 			switch_set_state(&hdmi_switch_data, HDMI_STATE_ACTIVE);
@@ -186,12 +243,17 @@ void hdmi_cable_fake_plug_out(void)
 	if (p->is_force_disable == false) {
 		if (IS_HDMI_ON()) {
 			if (hdmi_drv->get_state() != HDMI_STATE_ACTIVE) {
+#ifdef MHL_DYNAMIC_VSYNC_OFFSET
+				ged_dvfs_vsync_offset_event_switch(GED_DVFS_VSYNC_OFFSET_MHL_EVENT, false);
+#endif
 				hdmi_suspend();
+				hdmi_enable_dvfs(false);
 				switch_set_state(&hdmi_switch_data, HDMI_STATE_NO_DEVICE);
 				switch_set_state(&hdmires_switch_data, 0);
 			}
 		}
 	}
+	force_reschange = 0xffff;
 }
 
 int hdmi_cable_fake_connect(int connect)
@@ -250,10 +312,10 @@ int hdmi_free_hdmi_buffer(void)
 static int hdmi_wait_vsync_kthread(void *data)
 {
 	disp_session_vsync_config vsync_config;
-/*
-	struct sched_param param = {.sched_priority = RTPM_PRIO_SCRN_UPDATE };
+
+	struct sched_param param = {.sched_priority = 94 }; /*RTPM_PRIO_SCRN_UPDATE*/
 	sched_setscheduler(current, SCHED_RR, &param);
-*/
+
 
 	for (;;) {
 		ext_disp_wait_for_vsync((void *)&vsync_config, MHL_SESSION_ID);
@@ -281,19 +343,14 @@ int hdmi_wait_vsync_debug(int enable)
 	return 0;
 }
 
-/* -->for debug */
+int hdmi_dump_vendor_chip_register(void)
+{
+	int ret = 0;
 
-#ifdef MM_MHL_DVFS
-#include "mmdvfs_mgr.h"
-static void hdmi_enable_dvfs(int enable)
-{
-	mmdvfs_mhl_enable(enable);
+	if (hdmi_drv != NULL && hdmi_drv->dump != NULL)
+		hdmi_drv->dump();
+	return ret;
 }
-#else
-static void hdmi_enable_dvfs(int enable)
-{
-}
-#endif
 
 bool is_hdmi_active(void)
 {
@@ -367,7 +424,7 @@ int hdmi_get_support_info(void)
 int hdmi_video_config(enum HDMI_VIDEO_RESOLUTION vformat, enum HDMI_VIDEO_INPUT_FORMAT vin,
 enum HDMI_VIDEO_OUTPUT_FORMAT vout)
 {
-	if (p->is_mhl_video_on == true || first_frame_done == 0)
+	if (p->is_mhl_video_on == true && (p->vout == vout))
 		return 0;
 
 	HDMI_LOG("hdmi_video_config video_on=%d\n", p->is_mhl_video_on);
@@ -375,6 +432,17 @@ enum HDMI_VIDEO_OUTPUT_FORMAT vout)
 		HDMI_LOG("return in %d\n", __LINE__);
 		return 0;
 	}
+
+	if ((p->is_mhl_video_on == true) && (p->vout != vout)) {
+		p->vout = vout;
+		p->vin = vin;
+		atomic_set(&hdmi_3d_config_event, 1);
+		wake_up_interruptible(&hdmi_3d_config_wq);
+		return 0;
+	}
+
+	p->vout = vout;
+	p->vin = vin;
 
 	p->is_mhl_video_on = true;
 
@@ -461,8 +529,10 @@ static void _hdmi_rdma_irq_handler(DISP_MODULE_ENUM module, unsigned int param)
 static int hdmi_fence_release_kthread(void *data)
 {
 	int layid = 0;
+	int ovl_release = 0;
 	unsigned int session_id = 0;
 	int fence_idx = 0;
+	unsigned int layer_3d_format = 0;
 	bool ovl_reg_updated = false;
 	unsigned long input_curr_addr[EXTD_OVERLAY_CNT];
 	struct sched_param param = {.sched_priority = 94 }; /*RTPM_PRIO_SCRN_UPDATE*/
@@ -475,18 +545,34 @@ static int hdmi_fence_release_kthread(void *data)
 		ovl_reg_updated = false;
 		session_id = ext_disp_get_sess_id();
 		fence_idx = -1;
+		layer_3d_format = 0;
 
 		/*HDMI_LOG("hdmi_fence_release_kthread wake up\n");*/
 		if (session_id == 0)
 			continue;
 
 		if (ext_disp_path_source_is_RDMA(MHL_SESSION_ID)) {
-			if (ext_disp_get_ovl_req_status(MHL_SESSION_ID) == EXTD_OVL_REMOVED)
+			if (ext_disp_get_ovl_req_status(MHL_SESSION_ID) == EXTD_OVL_REMOVED) {
 				ext_disp_path_change(EXTD_OVL_NO_REQ, MHL_SESSION_ID);
+
+				if ((ovl_release == 1) && (EXTD_OVERLAY_CNT > 1)) {
+					for (layid = 1; layid < EXTD_OVERLAY_CNT; layid++) {
+						fence_idx = disp_sync_find_fence_idx_by_addr(session_id,
+										layid, ovl_config_address[layid]);
+						fence_idx = ((fence_idx >= 0) ? (fence_idx + 1) : fence_idx);
+						mtkfb_release_fence(session_id, layid, fence_idx);
+					}
+
+					ovl_release = 0;
+				}
+			}
 
 			ext_disp_get_curr_addr(input_curr_addr, 0);
 			fence_idx = disp_sync_find_fence_idx_by_addr(session_id, 0, input_curr_addr[0]);
 			mtkfb_release_fence(session_id, 0, fence_idx);
+			if (hdmi_params->is_3d_support)
+				layer_3d_format |= mtkfb_query_buf_info(session_id, layid, input_curr_addr[0], 0);
+
 		} else {
 			if (ext_disp_get_ovl_req_status(MHL_SESSION_ID) == EXTD_OVL_INSERTED)
 				ext_disp_path_change(EXTD_OVL_NO_REQ, MHL_SESSION_ID);
@@ -496,6 +582,7 @@ static int hdmi_fence_release_kthread(void *data)
 				if (ovl_config_address[layid] != input_curr_addr[layid]) {
 					ovl_config_address[layid] = input_curr_addr[layid];
 					ovl_reg_updated = true;
+					ovl_release = 1;
 				}
 
 				if (ext_disp_is_dim_layer(input_curr_addr[layid]) == 1)
@@ -505,6 +592,10 @@ static int hdmi_fence_release_kthread(void *data)
 										layid, input_curr_addr[layid]);
 
 				mtkfb_release_fence(session_id, layid, fence_idx);
+
+				if (hdmi_params->is_3d_support)
+					layer_3d_format |= mtkfb_query_buf_info(session_id
+								, layid, input_curr_addr[layid], 0);
 			}
 
 			if (ovl_reg_updated == false) {
@@ -516,7 +607,42 @@ static int hdmi_fence_release_kthread(void *data)
 					MMProfileFlagPulse, input_curr_addr[0], input_curr_addr[1]);
 		}
 
-		hdmi_video_config(p->output_video_resolution, HDMI_VIN_FORMAT_RGB888, HDMI_VOUT_FORMAT_RGB888);
+		rdmafpscnt++;
+
+		if ((force_reschange > 0xff) && (force_reschange < 0x0fff))
+			layer_3d_format = force_reschange >> 8;
+
+		if (layer_3d_format >= DISP_LAYER_3D_TAB_0)
+			layer_3d_format = HDMI_VOUT_FORMAT_3D_TAB;
+		else if (layer_3d_format >= DISP_LAYER_3D_SBS_0)
+			layer_3d_format = HDMI_VOUT_FORMAT_3D_SBS;
+		else
+			layer_3d_format = HDMI_VOUT_FORMAT_2D;
+
+		hdmi_video_config(p->output_video_resolution, HDMI_VIN_FORMAT_RGB888,
+						HDMI_VOUT_FORMAT_RGB888 | layer_3d_format);
+		if (kthread_should_stop())
+			break;
+	}
+
+	return 0;
+}
+
+static int hdmi_3d_config_kthread(void *data)
+{
+	struct sched_param param = { .sched_priority = 94 };
+	enum HDMI_VIDEO_RESOLUTION vformat = HDMI_VIDEO_RESOLUTION_NUM;
+
+	sched_setscheduler(current, SCHED_RR, &param);
+
+	for (;;) {
+		wait_event_interruptible(hdmi_3d_config_wq, atomic_read(&hdmi_3d_config_event));
+		atomic_set(&hdmi_3d_config_event, 0);
+
+		HDMI_LOG("video_on=%d fps %d, %d, %d\n", p->is_mhl_video_on, rdmafpscnt , p->vin , p->vout);
+
+		if (p->vout >= HDMI_VOUT_FORMAT_2D)
+			hdmi_drv->video_config(vformat, p->vin, p->vout);
 
 		if (kthread_should_stop())
 			break;
@@ -549,6 +675,11 @@ static enum HDMI_STATUS hdmi_drv_init(void)
 		hdmi_fence_release_task = kthread_create(hdmi_fence_release_kthread,
 							NULL, "hdmi_fence_release_kthread");
 		wake_up_process(hdmi_fence_release_task);
+	}
+
+	if (!hdmi_3d_config_task) {
+		hdmi_3d_config_task = kthread_create(hdmi_3d_config_kthread, NULL, "hdmi_3d_config_kthread");
+		wake_up_process(hdmi_3d_config_task);
 	}
 
 	return HDMI_STATUS_OK;
@@ -604,10 +735,11 @@ static void hdmi_state_reset(void)
 	ext_disp_suspend(MHL_SESSION_ID);
 	session_id = ext_disp_get_sess_id();
 
-	for (i = 0; i < EXTD_OVERLAY_CNT; i++)
+	for (i = 0; i < HW_OVERLAY_COUNT; i++)
 		mtkfb_release_layer_fence(session_id, i);
 
 	first_frame_done = 0;
+	rdmafpscnt = 0;
 	up(&hdmi_update_mutex);
 
 	MMProfileLogEx(ddp_mmp_get_events()->Extd_State, MMProfileFlagEnd, Plugout, 0);
@@ -671,6 +803,9 @@ static void hdmi_state_reset(void)
 
 /*static*/ void hdmi_power_off(void)
 {
+	int i = 0;
+	int session_id = 0;
+
 	HDMI_FUNC();
 	if (IS_HDMI_OFF())
 		return;
@@ -682,6 +817,11 @@ static void hdmi_state_reset(void)
 
 	hdmi_drv->power_off();
 	ext_disp_suspend(MHL_SESSION_ID);
+	session_id = ext_disp_get_sess_id();
+
+	for (i = 0; i < HW_OVERLAY_COUNT; i++)
+		mtkfb_release_layer_fence(session_id, i);
+
 	p->is_clock_on = false;
 	SET_HDMI_OFF();
 	up(&hdmi_update_mutex);
@@ -693,6 +833,7 @@ static void hdmi_resolution_setting(int arg)
 {
 	HDMI_FUNC();
 
+	extd_dpi_params.dispif_config.dpi.dsc_enable = 0;
 	if (hdmi_drv && hdmi_drv->get_params) {
 		hdmi_params->init_config.vformat = arg;
 		hdmi_drv->get_params(hdmi_params);
@@ -721,6 +862,32 @@ static void hdmi_resolution_setting(int arg)
 
 		extd_dpi_params.dispif_config.dpi.width = p->hdmi_width;
 		extd_dpi_params.dispif_config.dpi.height = p->hdmi_height;
+		if ((arg == HDMI_VIDEO_2160p_DSC_24Hz) || (arg == HDMI_VIDEO_2160p_DSC_30Hz)) {
+			memset(&(extd_dpi_params.dispif_config.dpi.dsc_params), 0, sizeof(LCM_DSC_CONFIG_PARAMS));
+			extd_dpi_params.dispif_config.dpi.dsc_enable = 1;
+			extd_dpi_params.dispif_config.dpi.width = p->hdmi_width/3;
+			/* width/(slice_mode's slice)*/
+			extd_dpi_params.dispif_config.dpi.dsc_params.slice_width = 1920;
+			extd_dpi_params.dispif_config.dpi.dsc_params.slice_hight = 8;	/*32  8 */
+			/* 128: 1/3 compress; 192: 1/2 compress*/
+			extd_dpi_params.dispif_config.dpi.dsc_params.bit_per_pixel = 128;
+			/* 0: 1 slice; 1: 2 slice; 2: 3 slice */
+			extd_dpi_params.dispif_config.dpi.dsc_params.slice_mode = 1;
+			extd_dpi_params.dispif_config.dpi.dsc_params.rgb_swap = 0;
+			extd_dpi_params.dispif_config.dpi.dsc_params.xmit_delay = 0x200;
+			extd_dpi_params.dispif_config.dpi.dsc_params.dec_delay = 0x4c0;
+			extd_dpi_params.dispif_config.dpi.dsc_params.scale_value = 0x20;
+			extd_dpi_params.dispif_config.dpi.dsc_params.increment_interval = 0x11e;
+			extd_dpi_params.dispif_config.dpi.dsc_params.decrement_interval = 0x1a;
+			extd_dpi_params.dispif_config.dpi.dsc_params.nfl_bpg_offset = 0xdb7;	/*0x667*/
+			extd_dpi_params.dispif_config.dpi.dsc_params.slice_bpg_offset = 0x394;	/*0x1ca*/
+			extd_dpi_params.dispif_config.dpi.dsc_params.final_offset = 0x10f0;
+			extd_dpi_params.dispif_config.dpi.dsc_params.line_bpg_offset = 0xc;
+			extd_dpi_params.dispif_config.dpi.dsc_params.bp_enable = 0x0;
+			extd_dpi_params.dispif_config.dpi.dsc_params.rct_on = 0x0;
+
+		}
+
 		extd_dpi_params.dispif_config.dpi.bg_width = p->bg_width;
 		extd_dpi_params.dispif_config.dpi.bg_height = p->bg_height;
 
@@ -866,7 +1033,11 @@ void hdmi_state_callback(enum HDMI_STATE state)
 void hdmi_set_layer_num(int layer_num)
 {
 	if (layer_num >= 0)
+#ifdef FIX_EXTD_TO_OVL_PATH
+		hdmi_layer_num = FIX_EXTD_TO_OVL_PATH;
+#else
 		hdmi_layer_num = layer_num;
+#endif
 }
 
 int hdmi_enable(int enable)
@@ -1020,6 +1191,9 @@ int hdmi_set_resolution(int res)
 		return 0;
 	}
 
+	/* just for debug */
+	if ((force_reschange & 0xff) < 0xff)
+		res = force_reschange & 0xff;
 
 	if (hdmi_reschange == res) {
 		HDMI_LOG("hdmi_reschange=%ld\n", hdmi_reschange);
@@ -1044,13 +1218,14 @@ int hdmi_set_resolution(int res)
 
 		session_id = ext_disp_get_sess_id();
 
-		for (i = 0; i < EXTD_OVERLAY_CNT; i++)
+		for (i = 0; i < HW_OVERLAY_COUNT; i++)
 			mtkfb_release_layer_fence(session_id, i);
 	}
 
 	hdmi_resolution_setting(res);
 	p->is_mhl_video_on = false;
 	first_frame_done = 0;
+	rdmafpscnt = 0;
 
 	up(&hdmi_update_mutex);
 
@@ -1058,6 +1233,10 @@ int hdmi_set_resolution(int res)
 	p->is_clock_on = true;
 	MMProfileLogEx(ddp_mmp_get_events()->Extd_State, MMProfileFlagEnd, ResChange, hdmi_reschange + 1);
 
+/*
+	hdmi_factory_mode_test(STEP3_START_DPI_AND_CONFIG,NULL);
+	hdmi_drv->video_config(HDMI_VIDEO_1280x720p_60Hz, HDMI_VIN_FORMAT_RGB888, HDMI_VOUT_FORMAT_RGB888);
+*/
 	return 0;
 }
 
@@ -1097,11 +1276,19 @@ int hdmi_get_dev_info(int is_sf, void *info)
 			hdmi_info.displayType = HDMI_SMARTBOOK;
 		else if (hdmi_params->cabletype == MHL_CABLE)
 			hdmi_info.displayType = MHL;
+		else if (hdmi_params->cabletype == SLIMPORT_CABLE)
+			hdmi_info.displayType = SLIMPORT;
 		else
 			hdmi_info.displayType = HDMI;
 
 		hdmi_info.isHwVsyncAvailable = HW_DPI_VSYNC_SUPPORT;
-		hdmi_info.vsyncFPS = 60;
+
+		if ((hdmi_reschange == HDMI_VIDEO_1920x1080p_30Hz) || (hdmi_reschange == HDMI_VIDEO_2160p_DSC_30Hz))
+			hdmi_info.vsyncFPS = 3000;
+		else if (hdmi_reschange == HDMI_VIDEO_2160p_DSC_24Hz)
+			hdmi_info.vsyncFPS = 2400;
+		else
+			hdmi_info.vsyncFPS = 6000;
 
 		if (copy_to_user(info, &hdmi_info, sizeof(hdmi_info))) {
 			MMProfileLogEx(ddp_mmp_get_events()->Extd_ErrorInfo, MMProfileFlagPulse, Devinfo, 1);
@@ -1118,11 +1305,6 @@ int hdmi_get_dev_info(int is_sf, void *info)
 		memset((void *)dispif_info, 0, sizeof(disp_session_info));
 
 		dispif_info->isOVLDisabled = (hdmi_layer_num == 1) ? 1 : 0;
-/* if(ext_disp_path_get_mode() == EXTD_RDMA_DPI_MODE) */
-/* { */
-/* dispif_info->isOVLDisabled = 0; */
-/* } */
-
 		dispif_info->maxLayerNum = hdmi_layer_num;
 		dispif_info->displayFormat = DISPIF_FORMAT_RGB888;
 		dispif_info->displayHeight = p->hdmi_height;
@@ -1135,11 +1317,19 @@ int hdmi_get_dev_info(int is_sf, void *info)
 				dispif_info->displayType = DISP_IF_MHL;
 		} else if (hdmi_params->cabletype == MHL_CABLE)
 			dispif_info->displayType = DISP_IF_MHL;
+		else if (hdmi_params->cabletype == SLIMPORT_CABLE)
+			dispif_info->displayType = DISP_IF_SLIMPORT;   /*value == 11*/
 		else
 			dispif_info->displayType = DISP_IF_HDMI;
 
 		dispif_info->isHwVsyncAvailable = HW_DPI_VSYNC_SUPPORT;
-		dispif_info->vsyncFPS = 60;
+
+		if ((hdmi_reschange == HDMI_VIDEO_1920x1080p_30Hz) || (hdmi_reschange == HDMI_VIDEO_2160p_DSC_30Hz))
+			dispif_info->vsyncFPS = 3000;
+		else if (hdmi_reschange == HDMI_VIDEO_2160p_DSC_24Hz)
+			dispif_info->vsyncFPS = 2400;
+		else
+			dispif_info->vsyncFPS = 6000;
 
 		if (dispif_info->displayWidth * dispif_info->displayHeight <= 240 * 432)
 			dispif_info->physicalHeight = dispif_info->physicalWidth = 0;
@@ -1153,8 +1343,17 @@ int hdmi_get_dev_info(int is_sf, void *info)
 		dispif_info->isConnected = 1;
 		dispif_info->isHDCPSupported = hdmi_params->HDCPSupported;
 
-		/* /HDMI_LOG("extd_hdmi_get_dev_info lays %d, type %d, H %d\n", dispif_info->maxLayerNum,
-				dispif_info->displayType, dispif_info->displayHeight); */
+		/* fake 3d assert for debug */
+		if ((force_reschange > 0xff) && (force_reschange < 0xffff))
+			hdmi_params->is_3d_support = 1;
+
+		dispif_info->is3DSupport = hdmi_params->is_3d_support;
+/*
+		HDMI_LOG("DEV_INFO configuration get displayType-%d, HDMI support version:%u, 3d support %d\n",
+			dispif_info->displayType, dispif_info->isHDCPSupported, dispif_info->is3DSupport);
+		HDMI_LOG("DEV_INFO configuration displayHeight:%u, displayWidth:%u\n",
+			dispif_info->displayHeight, dispif_info->displayWidth);
+*/
 	}
 
 	return ret;
@@ -1192,15 +1391,20 @@ int hdmi_get_edid(void *edid_info)
 		hdmi_drv->getedid(&pv_get_info);
 
 #ifdef MHL_RESOLUTION_LIMIT_720P_60
-			pv_get_info.ui4_pal_resolution &= (~SINK_1080P60);
-			pv_get_info.ui4_pal_resolution &= (~SINK_1080P30);
+		pv_get_info.ui4_pal_resolution &= (~SINK_1080P60);
+		pv_get_info.ui4_pal_resolution &= (~SINK_1080P30);
+		pv_get_info.ui4_pal_resolution &= (~SINK_2160p30);
+		pv_get_info.ui4_pal_resolution &= (~SINK_2160p24);
 #endif
-	
+
 #ifdef MHL_RESOLUTION_LIMIT_1080P_30
-			if (pv_get_info.ui4_pal_resolution & SINK_1080P60) {
-				pv_get_info.ui4_pal_resolution &= (~SINK_1080P60);
-				pv_get_info.ui4_pal_resolution |= SINK_1080P30;
-			}
+		if (pv_get_info.ui4_pal_resolution & SINK_1080P60) {
+			pv_get_info.ui4_pal_resolution &= (~SINK_1080P60);
+			pv_get_info.ui4_pal_resolution |= SINK_1080P30;
+		}
+
+		pv_get_info.ui4_pal_resolution &= (~SINK_2160p30);
+		pv_get_info.ui4_pal_resolution &= (~SINK_2160p24);
 #endif
 	}
 
@@ -1221,6 +1425,8 @@ int hdmi_get_device_type(void)
 			device_type = DISP_IF_HDMI_SMARTBOOK;
 		else if (hdmi_params->cabletype == MHL_CABLE)
 			device_type = DISP_IF_MHL;
+		else if (hdmi_params->cabletype == SLIMPORT_CABLE)
+			device_type = DISP_IF_SLIMPORT;
 	}
 
 	return device_type;
@@ -1296,7 +1502,6 @@ int hdmi_post_init(void)
 	};
 
 	hdmi_drv = (struct HDMI_DRIVER *) HDMI_GetDriver();
-
 	if (NULL == hdmi_drv) {
 		HDMI_ERR("[hdmi]%s, hdmi_init fail, can not get hdmi driver handle\n", __func__);
 		return -1;
@@ -1328,6 +1533,8 @@ int hdmi_post_init(void)
 
 	init_waitqueue_head(&hdmi_fence_release_wq);
 	init_waitqueue_head(&hdmi_vsync_wq);
+
+	init_waitqueue_head(&hdmi_3d_config_wq);
 
 	Extd_DBG_Init();
 	return 0;

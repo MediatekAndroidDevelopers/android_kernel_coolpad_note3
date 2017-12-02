@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifdef CONFIG_MTK_CLKMGR
 #include <mach/mt_clkmgr.h>
 #else
@@ -511,25 +524,13 @@ static void usb_phy_savecurrent_internal(void)
 void usb_phy_savecurrent(void)
 {
 
-	/* to avoid hw access during clock-off */
-	unsigned long flags;
-	int do_lock;
-
-	do_lock = 0;
 
 	usb_phy_savecurrent_internal();
 
-	/* to avoid deadlock, musb_shutdown will hold this clock too */
-	if (mtk_musb && !musb_is_shutting) {
-		spin_lock_irqsave(&mtk_musb->lock, flags);
-		do_lock = 1;
-	}
 
 	/* 4 14. turn off internal 48Mhz PLL. */
 	usb_enable_clock(false);
 
-	if (do_lock)
-		spin_unlock_irqrestore(&mtk_musb->lock, flags);
 
 	DBG(0, "usb save current success\n");
 }
@@ -538,25 +539,10 @@ void usb_phy_savecurrent(void)
 void usb_phy_recover(void)
 {
 
-	/* to avoid hw access during clock-on */
-	unsigned long flags;
-	int do_lock;
-
-	do_lock = 0;
-
-	if (mtk_musb) {
-		spin_lock_irqsave(&mtk_musb->lock, flags);
-		do_lock = 1;
-	} else {
-		DBG(0, "mtk_musb is NULL\n");
-		return;
-	}
 
 	/* turn on USB reference clock. */
 	usb_enable_clock(true);
 
-	if (do_lock)
-		spin_unlock_irqrestore(&mtk_musb->lock, flags);
 
 	/* wait 50 usec. */
 	udelay(50);
@@ -645,22 +631,50 @@ void usb_phy_recover(void)
 /* BC1.2 */
 void Charger_Detect_Init(void)
 {
+	unsigned long flags;
+	int do_lock;
+
+	do_lock = 0;
+	if (mtk_musb) {
+		spin_lock_irqsave(&mtk_musb->lock, flags);
+		do_lock = 1;
+	} else {
+		DBG(0, "mtk_musb is NULL\n");
+
+	}
 	/* turn on USB reference clock. */
 	usb_enable_clock(true);
 	/* wait 50 usec. */
 	udelay(50);
 	/* RG_USB20_BC11_SW_EN = 1'b1 */
 	USBPHY_SET8(0x1a, 0x80);
+
+	if (do_lock)
+		spin_unlock_irqrestore(&mtk_musb->lock, flags);
 	DBG(0, "Charger_Detect_Init\n");
 }
 
 void Charger_Detect_Release(void)
 {
+	unsigned long flags;
+	int do_lock;
+
+	do_lock = 0;
+	if (mtk_musb) {
+		spin_lock_irqsave(&mtk_musb->lock, flags);
+		do_lock = 1;
+	} else {
+		DBG(0, "mtk_musb is NULL\n");
+	}
+
 	/* RG_USB20_BC11_SW_EN = 1'b0 */
 	USBPHY_CLR8(0x1a, 0x80);
 	udelay(1);
 	/* 4 14. turn off internal 48Mhz PLL. */
 	usb_enable_clock(false);
+
+	if (do_lock)
+		spin_unlock_irqrestore(&mtk_musb->lock, flags);
 	DBG(0, "Charger_Detect_Release\n");
 }
 

@@ -1,8 +1,27 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #define LOG_TAG "RDMA"
 
 #include <linux/delay.h>
 #include "m4u.h"
+#if defined(COMMON_DISP_LOG)
+#include "disp_debug.h"
+#include "disp_log.h"
+#else
+#include "disp_drv_log.h"
 #include "ddp_log.h"
+#endif
 #include "ddp_reg.h"
 #include "ddp_matrix_para.h"
 #include "ddp_dump.h"
@@ -26,7 +45,7 @@ unsigned int rdma_index(DISP_MODULE_ENUM module)
 		idx = 2;
 		break;
 	default:
-		DDPERR("invalid rdma module=%d\n", module);	/* invalid module */
+		DISPERR("invalid rdma module=%d\n", module);	/* invalid module */
 		ASSERT(0);
 	}
 	ASSERT((idx >= 0) && (idx < RDMA_INSTANCES));

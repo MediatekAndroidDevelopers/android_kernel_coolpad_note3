@@ -185,8 +185,8 @@ static int g_start_debug_thread;
 static int g_adc_init_flag;
 
 static u32 cali_reg;
-static u32 cali_oe;
-static u32 cali_ge;
+static s32 cali_oe;
+static s32 cali_ge;
 static u32 cali_ge_a;
 static u32 cali_oe_a;
 static u32 gain;
@@ -1637,7 +1637,7 @@ static int proc_utilization_show(struct seq_file *m, void *v)
 
 	seq_puts(m, "********** Auxadc status dump **********\n");
 
-	seq_printf(m, "reg=0x%x ADC_GE_A=0x%x ADC_OE_A=0x%x GE:0x%x OE:0x%x gain:0x%x\n",
+	seq_printf(m, "reg=0x%x ADC_GE_A=%d ADC_OE_A=%d GE:%d OE:%d gain:0x%x\n",
 	cali_reg, cali_ge_a, cali_oe_a, cali_ge, cali_oe, gain);
 #if defined(EFUSE_CALI)
 	seq_printf(m, "ADC_GE_A_MASK:0x%x ADC_GE_A_SHIFT:0x%x\n", ADC_GE_A_MASK, ADC_GE_A_SHIFT);
@@ -1840,9 +1840,7 @@ static int mt_auxadc_probe(struct platform_device *dev)
 
 	g_adc_init_flag = 1;
 
-	if (mt_auxadc_create_device_attr(adc_dev))
-		goto exit;
-exit:
+	mt_auxadc_create_device_attr(adc_dev);
 	return ret;
 }
 

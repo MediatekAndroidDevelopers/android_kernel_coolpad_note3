@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __MTKFB_INFO_H__
 #define __MTKFB_INFO_H__
 
@@ -17,7 +30,8 @@ extern "C" {
 		HDMI = 7,
 		HDMI_SMARTBOOK,
 		MHL,
-		DISPIF_TYPE_EPD
+		DISPIF_TYPE_EPD,
+		SLIMPORT
 	} MTKFB_DISPIF_TYPE;
 
 	typedef enum {
@@ -73,6 +87,9 @@ extern "C" {
 		MTK_FB_FORMAT_UYVY = MAKE_MTK_FB_FORMAT_ID(9, 2),
 		MTK_FB_FORMAT_YUV420_P = MAKE_MTK_FB_FORMAT_ID(10, 2),
 		MTK_FB_FORMAT_YUY2 = MAKE_MTK_FB_FORMAT_ID(11, 2),
+		MTK_FB_FORMAT_RGBA8888 = MAKE_MTK_FB_FORMAT_ID(12, 4),
+		MTK_FB_FORMAT_BGRA8888 = MAKE_MTK_FB_FORMAT_ID(13, 4),
+		MTK_FB_FORMAT_RGBX8888 = MAKE_MTK_FB_FORMAT_ID(14, 4),
 		MTK_FB_FORMAT_BPP_MASK = 0xFF,
 	} MTK_FB_FORMAT;
 

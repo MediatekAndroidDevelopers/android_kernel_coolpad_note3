@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _LIBMTK_CIPHER_EXPORT_H
 #define _LIBMTK_CIPHER_EXPORT_H
 
@@ -73,10 +86,10 @@ typedef int (*hevc_api_initk_funp)(unsigned char *key, unsigned int klen);
 
 
 #define HEVC_ENCRYTP_FILE_PATH            "/data/mediaserver"
-#define HEVC_ENC_SW_ENCRYPT_FILE_PATH     "/system/lib/libhevce_sb.ca7.android.so"
+#define HEVC_ENC_SW_ENCRYPT_FILE_PATH     "/vendor/lib/libhevce_sb.ca7.android.so"
 #define HEVC_ENC_HW_ENCRYPT_FILE_PATH     "/data/mediaserver/sb.ca7.android_hwenc.so"
 #define HEVC_ENC_HW_DECRYPT_FILE_PATH     "/data/mediaserver/sb.ca7.android_hwdec.so"
-#define HEVC_DEC_SW_ENCRYTP_FILE_PATH     "/system/lib/libHEVCdec_sa.ca7.android.so"
+#define HEVC_DEC_SW_ENCRYTP_FILE_PATH     "/vendor/lib/libHEVCdec_sa.ca7.android.so"
 #define HEVC_DEC_HW_ENCRYPT_FILE_PATH     "/data/mediaserver/dec_sa.ca7.android_hwenc.so"
 #define HEVC_DEC_HW_DECRYPT_FILE_PATH     "/data/mediaserver/dec_sa.ca7.android_hwdec.so"
 

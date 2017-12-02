@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __MTKFB_FENCE_H__
 #define __MTKFB_FENCE_H__
 
@@ -5,7 +18,12 @@
 #include <linux/list.h>
 #include "disp_session.h"
 #include "disp_drv_platform.h"
+
+#if defined(COMMON_DISP_LOG)
+#include "disp_recorder.h"
+#else
 #include "display_recorder.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,9 +74,7 @@ struct mtkfb_fence_buf_info {
 	unsigned long long ts_create;
 	unsigned long long ts_period_keep;
 	unsigned int seq;
-#ifdef CONFIG_MTK_HDMI_3D_SUPPORT
 	unsigned int layer_type;
-#endif
 };
 
 struct mtkfb_fence_sync_info {
@@ -140,12 +156,10 @@ unsigned int mtkfb_update_buf_ticket(unsigned int session_id, unsigned int layer
 				     unsigned int idx, unsigned int ticket);
 unsigned int mtkfb_query_idx_by_ticket(unsigned int session_id, unsigned int layer_id,
 				       unsigned int ticket);
-#ifdef CONFIG_MTK_HDMI_3D_SUPPORT
 bool mtkfb_update_buf_info_new(unsigned int session_id, unsigned int mva_offset,
 		disp_input_config *buf_info);
 unsigned int mtkfb_query_buf_info(unsigned int session_id, unsigned int layer_id,
 		unsigned long phy_addr, int query_type);
-#endif
 unsigned int mtkfb_query_release_idx(unsigned int session_id, unsigned int layer_id,
 				     unsigned long phy_addr);
 unsigned int mtkfb_query_frm_seq_by_addr(unsigned int session_id, unsigned int layer_id,

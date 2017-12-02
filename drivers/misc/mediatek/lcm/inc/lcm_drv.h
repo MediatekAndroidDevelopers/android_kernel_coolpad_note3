@@ -619,6 +619,8 @@ typedef struct {
 	LCM_DSI_PARAMS dsi;
 	unsigned int physical_width;
 	unsigned int physical_height;
+	unsigned int physical_width_um;
+	unsigned int physical_height_um;
 	unsigned int od_table_size;
 	void *od_table;
 } LCM_PARAMS;

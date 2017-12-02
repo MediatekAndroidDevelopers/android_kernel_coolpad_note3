@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #if defined(CONFIG_MTK_HDMI_SUPPORT)
 #include <linux/string.h>
 #include <linux/time.h>
@@ -28,14 +41,19 @@
 /* --------------------------------------------------------------------------- */
 
 
-static const char STR_HELP[] = "\n" "USAGE\n" "        echo [ACTION]... > hdmi\n" "\n" "ACTION\n"
-		"        hdmitx:[on|off]\n" "             enable hdmi video output\n" "\n";
+static const char STR_HELP[] = "\n" "USAGE\n" "        echo [ACTION]... > /d/extd\n" "\n" "ACTION\n"
+		"        fakecablein:[enable|disable]\n" "	fake mhl cable in/out\n" "\n"
+		"        force_res:0xffff\n" "	fix resolution or 3d enable(high 16 bit)\n" "\n";
 
 /* TODO: this is a temp debug solution */
 /* extern void hdmi_cable_fake_plug_in(void); */
 /* extern int hdmi_drv_init(void); */
 static void process_dbg_opt(const char *opt)
 {
+	char *p = NULL;
+	unsigned int res = 0;
+	int ret = 0;
+
 	if (0 == strncmp(opt, "on", 2))
 		hdmi_power_on();
 	else if (0 == strncmp(opt, "off", 3))
@@ -51,6 +69,10 @@ static void process_dbg_opt(const char *opt)
 			hdmi_cable_fake_plug_out();
 		else
 			goto Error;
+	} else if (0 == strncmp(opt, "force_res:", 10)) {
+		p = (char *)opt + 10;
+		ret = kstrtouint(p, 0, &res);
+		hdmi_force_resolution(res);
 	} else if (0 == strncmp(opt, "hdmireg", 7))
 		ext_disp_diagnose();
 	else if (0 == strncmp(opt, "I2S1:", 5)) {
@@ -74,7 +96,9 @@ static void process_dbg_opt(const char *opt)
 			hdmi_wait_vsync_debug(1);
 		else if (0 == strncmp(opt + 11, "off", 3))
 			hdmi_wait_vsync_debug(0);
-	} else
+	} else if (0 == strncmp(opt, "dumpReg", 7))
+		hdmi_dump_vendor_chip_register();
+	else
 		goto Error;
 
 	return;

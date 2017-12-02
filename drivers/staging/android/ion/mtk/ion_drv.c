@@ -67,6 +67,7 @@ static int __ion_cache_sync_kernel(unsigned long start, size_t size,
 		/* IONMSG("[ion_sys_cache_sync]: ION cache clean by range. start=0x%08X size=0x%08X\n",
 		 * start, size); */
 		dmac_map_area((void *) start, size, DMA_TO_DEVICE);
+		MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_CLEAN_RANGE], MMProfileFlagEnd, size, 0);
 	} else if ((sync_type == ION_CACHE_INVALID_BY_RANGE)
 			|| (sync_type == ION_CACHE_INVALID_BY_RANGE_USE_VA)) {
 		MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_INVALID_RANGE],
@@ -74,6 +75,7 @@ static int __ion_cache_sync_kernel(unsigned long start, size_t size,
 		/* IONMSG("[ion_sys_cache_sync]: ION cache invalid by range. start=0x%08X size=0x%08X\n",
 		 * start, size); */
 		dmac_unmap_area((void *) start, size, DMA_FROM_DEVICE);
+		MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_INVALID_RANGE], MMProfileFlagEnd, size, 0);
 	} else if ((sync_type == ION_CACHE_FLUSH_BY_RANGE)
 			|| (sync_type == ION_CACHE_FLUSH_BY_RANGE_USE_VA)) {
 		MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_FLUSH_RANGE],
@@ -81,6 +83,7 @@ static int __ion_cache_sync_kernel(unsigned long start, size_t size,
 		/* IONMSG("[ion_sys_cache_sync]: ION cache flush by range. start=0x%08X size=0x%08X\n",
 		 * start, size); */
 		dmac_flush_range((void *) start, (void *) (start + size - 1));
+		MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_FLUSH_RANGE], MMProfileFlagEnd, size, 0);
 	}
 
 	return 0;
@@ -242,13 +245,6 @@ static long ion_sys_cache_sync(struct ion_client *client,
 #endif
 
 		ion_drv_put_kernel_handle(kernel_handle);
-
-		if (pParam->sync_type == ION_CACHE_CLEAN_BY_RANGE)
-			MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_CLEAN_RANGE], MMProfileFlagEnd, size, 0);
-		else if (pParam->sync_type == ION_CACHE_INVALID_BY_RANGE)
-			MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_INVALID_RANGE], MMProfileFlagEnd, size, 0);
-		else if (pParam->sync_type == ION_CACHE_FLUSH_BY_RANGE)
-			MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_FLUSH_RANGE], MMProfileFlagEnd, size, 0);
 	} else {
 		/* All cache operation */
 		if (pParam->sync_type == ION_CACHE_CLEAN_ALL) {
@@ -288,6 +284,16 @@ int ion_sys_copy_client_name(const char *src, char *dst)
 	return 0;
 }
 
+static int ion_cache_sync_flush(unsigned long start, size_t size,
+		ION_DMA_TYPE dma_type) {
+	MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_FLUSH_RANGE],
+			MMProfileFlagStart, size, 0);
+	dmac_flush_range((void *) start, (void *) (start + size - 1));
+	MMProfileLogEx(ION_MMP_Events[PROFILE_DMA_FLUSH_RANGE], MMProfileFlagEnd, size, 0);
+
+	return 0;
+}
+
 long ion_dma_op(struct ion_client *client, ion_sys_dma_param_t *pParam, int from_kernel)
 {
 	struct ion_buffer *buffer;
@@ -312,6 +318,20 @@ long ion_dma_op(struct ion_client *client, ion_sys_dma_param_t *pParam, int from
 	table = buffer->sg_table;
 	npages = PAGE_ALIGN(buffer->size) / PAGE_SIZE;
 
+#ifdef CONFIG_MTK_CACHE_FLUSH_RANGE_PARALLEL
+	if ((pParam->dma_type == ION_DMA_FLUSH_BY_RANGE)
+		|| (pParam->dma_type == ION_DMA_FLUSH_BY_RANGE_USE_VA)) {
+		mutex_unlock(&client->lock);
+
+		if (!ion_sync_kernel_func)
+			ion_sync_kernel_func = &ion_cache_sync_flush;
+
+		if (mt_smp_cache_flush(table, pParam->dma_type, npages) < 0) {
+			pr_emerg("[smp cache flush] error in smp_sync_sg_list\n");
+			return -EFAULT;
+		}
+	} else {
+#endif
 	mutex_lock(&gIon_cache_sync_user_lock);
 
 	if (!cache_map_vm_struct) {
@@ -345,6 +365,8 @@ long ion_dma_op(struct ion_client *client, ion_sys_dma_param_t *pParam, int from
 				ion_dma_map_area_va((void *)start, PAGE_SIZE, pParam->dma_dir);
 			else if (pParam->dma_type == ION_DMA_UNMAP_AREA)
 				ion_dma_unmap_area_va((void *)start, PAGE_SIZE, pParam->dma_dir);
+			else if (pParam->dma_type == ION_DMA_FLUSH_BY_RANGE)
+				ion_cache_sync_flush(start, PAGE_SIZE, ION_DMA_FLUSH_BY_RANGE);
 
 			ion_cache_unmap_page_va(start);
 		}
@@ -355,6 +377,9 @@ long ion_dma_op(struct ion_client *client, ion_sys_dma_param_t *pParam, int from
 
 	ion_drv_put_kernel_handle(kernel_handle);
 
+#ifdef CONFIG_MTK_CACHE_FLUSH_RANGE_PARALLEL
+	}
+#endif
 	return 0;
 }
 
@@ -394,6 +419,7 @@ static long ion_sys_dma_op(struct ion_client *client, ion_sys_dma_param_t *pPara
 	switch (pParam->dma_type) {
 	case ION_DMA_MAP_AREA:
 	case ION_DMA_UNMAP_AREA:
+	case ION_DMA_FLUSH_BY_RANGE:
 		ion_dma_op(client, pParam, from_kernel);
 		break;
 	case ION_DMA_MAP_AREA_VA:
@@ -404,6 +430,10 @@ static long ion_sys_dma_op(struct ion_client *client, ion_sys_dma_param_t *pPara
 		break;
 	case ION_DMA_CACHE_FLUSH_ALL:
 		ion_cache_flush_all();
+		break;
+	case ION_DMA_FLUSH_BY_RANGE_USE_VA:
+		ion_cache_sync_flush((unsigned long)pParam->va, (size_t) pParam->size,
+					ION_DMA_FLUSH_BY_RANGE_USE_VA);
 		break;
 	default:
 		IONMSG("[ion_dbg][ion_sys_dma_op]: Error. Invalid command.\n");
@@ -542,6 +572,51 @@ static long ion_custom_ioctl(struct ion_client *client, unsigned int cmd,
  DEFINE_SIMPLE_ATTRIBUTE(debug_profile_fops, debug_profile_get,
  debug_profile_set, "%llu\n");*/
 
+
+struct ion_heap *ion_mtk_heap_create(struct ion_platform_heap *heap_data)
+{
+	struct ion_heap *heap = NULL;
+
+	switch ((int)heap_data->type) {
+	case ION_HEAP_TYPE_MULTIMEDIA:
+		heap = ion_mm_heap_create(heap_data);
+		break;
+	case ION_HEAP_TYPE_FB:
+		heap = ion_fb_heap_create(heap_data);
+		break;
+	default:
+		heap = ion_heap_create(heap_data);
+	}
+
+	if (IS_ERR_OR_NULL(heap)) {
+		pr_err("%s: error creating heap %s type %d base %lu size %zu\n",
+		       __func__, heap_data->name, heap_data->type,
+		       heap_data->base, heap_data->size);
+		return ERR_PTR(-EINVAL);
+	}
+
+	heap->name = heap_data->name;
+	heap->id = heap_data->id;
+	return heap;
+}
+
+void ion_mtk_heap_destroy(struct ion_heap *heap)
+{
+	if (!heap)
+		return;
+
+	switch ((int)heap->type) {
+	case ION_HEAP_TYPE_MULTIMEDIA:
+		ion_mm_heap_destroy(heap);
+		break;
+	case ION_HEAP_TYPE_FB:
+		ion_fb_heap_destroy(heap);
+		break;
+	default:
+		ion_heap_destroy(heap);
+	}
+}
+
 int ion_drv_create_heap(struct ion_platform_heap *heap_data)
 {
 	struct ion_heap *heap;
@@ -559,9 +634,25 @@ int ion_drv_create_heap(struct ion_platform_heap *heap_data)
 	return 0;
 }
 
+int ion_device_destroy_heaps(struct ion_device *dev)
+{
+	struct ion_heap *heap, *tmp;
+
+	down_write(&dev->lock);
+
+	plist_for_each_entry_safe(heap, tmp, &dev->heaps, node) {
+		plist_del((struct plist_node *)heap, &dev->heaps);
+		ion_mtk_heap_destroy(heap);
+	}
+
+	up_write(&dev->lock);
+
+	return 0;
+}
+
 static int ion_drv_probe(struct platform_device *pdev)
 {
-	int ret, i;
+	int i;
 	struct ion_platform_data *pdata = pdev->dev.platform_data;
 	unsigned int num_heaps = pdata->nr;
 
@@ -575,6 +666,7 @@ static int ion_drv_probe(struct platform_device *pdev)
 	/* create the heaps as specified in the board file */
 	for (i = 0; i < num_heaps; i++) {
 		struct ion_platform_heap *heap_data = &pdata->heaps[i];
+		struct ion_heap *heap;
 
 		if (heap_data->type == ION_HEAP_TYPE_CARVEOUT && heap_data->base == 0) {
 			/* reserve for carveout heap failed */
@@ -582,9 +674,12 @@ static int ion_drv_probe(struct platform_device *pdev)
 			continue;
 		}
 
-		ret = ion_drv_create_heap(heap_data);
-		if (ret)
-			goto err;
+		heap = ion_mtk_heap_create(heap_data);
+
+		if (IS_ERR_OR_NULL(heap))
+			continue;
+
+		ion_device_add_heap(g_ion_device, heap);
 	}
 
 	platform_set_drvdata(pdev, g_ion_device);
@@ -598,19 +693,16 @@ static int ion_drv_probe(struct platform_device *pdev)
 	ion_profile_init();
 
 	return 0;
-
-err:
-	ion_device_destroy_heaps(g_ion_device, 1);
-	return ret;
-
 }
 
 int ion_drv_remove(struct platform_device *pdev)
 {
 	struct ion_device *idev = platform_get_drvdata(pdev);
 
-	ion_device_destroy_heaps(idev, 1);
+	ion_device_destroy_heaps(g_ion_device);
+
 	ion_device_destroy(idev);
+
 	return 0;
 }
 
@@ -637,7 +729,7 @@ static struct ion_platform_heap ion_drv_platform_heaps[] = {
 
 struct ion_platform_data ion_drv_platform_data = {
 
-.nr = ARRAY_SIZE(ion_drv_platform_heaps), .heaps = ion_drv_platform_heaps, };
+.nr = ARRAY_SIZE(ion_drv_platform_heaps), .heaps = ion_drv_platform_heaps};
 
 static struct platform_driver ion_driver = {
 		.probe = ion_drv_probe,

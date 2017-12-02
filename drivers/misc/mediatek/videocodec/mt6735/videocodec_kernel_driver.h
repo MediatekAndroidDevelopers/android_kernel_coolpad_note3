@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __VCODEC_DRIVER_H__
 #define __VCODEC_DRIVER_H__
 
@@ -41,7 +54,6 @@
 #define VCODEC_UNLOCKHW                _IOW(MFV_IOC_MAGIC, 0x33, unsigned int) /* VAL_HW_LOCK_T * */
 #define VCODEC_MB                      _IOW(MFV_IOC_MAGIC, 0x34, unsigned int) /* VAL_UINT32_T * */
 #define VCODEC_SET_LOG_COUNT           _IOW(MFV_IOC_MAGIC, 0x35, unsigned int) /* VAL_BOOL_T * */
-
 
 /* extern unsigned long get_cpu_load(int cpu); */
 
