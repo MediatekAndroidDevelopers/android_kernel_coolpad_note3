@@ -27,6 +27,7 @@
 #include "ddp_ovl.h"
 #include "ddp_drv.h"
 #include "primary_display.h"
+#include "ddp_debug.h"
 #include "disp_assert_layer.h"
 #include "ddp_irq.h"
 #include "disp_log.h"

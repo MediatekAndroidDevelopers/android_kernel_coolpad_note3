@@ -149,10 +149,6 @@ disp_ddp_path_config last_primary_config;
 static struct switch_dev disp_switch_data;
 #endif
 
-//start 2016.04.04 add by lijianbin for lcd power lijianbin@yulong.com
-extern void lcm_vddi_power_on(void);
-extern void lcm_vddi_power_off(void);
-//end 2016.04.04 add by lijianbin for lcd power lijianbin@yulong.com
 void enqueue_buffer(display_primary_path_context *ctx, struct list_head *head,
 		    disp_internal_buffer_info *buf)
 {
@@ -838,6 +834,7 @@ cpu_d:
 
 		return get_mmsys_clk();
 	}
+
 	/* 1.create and reset cmdq */
 	cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &handle);
 
@@ -3790,7 +3787,7 @@ static int primary_display_esd_check_worker_kthread(void *data)
 	int esd_try_cnt = 5;	/* 20; */
 	int count = 0;
 	struct sched_param param = {.sched_priority = 87 }; /* RTPM_PRIO_FB_THREAD */
-  printk("yulong  lcd esd thread\n");//2016.5.5 lijianbin@yulong.com  add by lijianbin for lcd esd log
+
 	sched_setscheduler(current, SCHED_RR, &param);
 	dpmgr_enable_event(pgc->dpmgr_handle, DISP_PATH_EVENT_FRAME_DONE);
 	dpmgr_enable_event(pgc->dpmgr_handle, DISP_PATH_EVENT_FRAME_START);
@@ -5855,9 +5852,7 @@ int primary_display_suspend(void)
 	DISPMSG("[POWER]dpmanager path power off[begin]\n");
 	dpmgr_path_power_off(pgc->dpmgr_handle, CMDQ_DISABLE);
 	DISPMSG("[POWER]dpmanager path power off[end]\n");
-//start 2016.04.04 add by lijianbin for lcd power lijianbin@yulong.com
-    lcm_vddi_power_off();
-//end 2016.04.04 add by lijianbin for lcd power lijianbin@yulong.com
+
 	if (_is_decouple_mode(pgc->session_mode)) {
 		dpmgr_path_power_off(pgc->ovl2mem_path_handle, CMDQ_DISABLE);
 	} else if (is_mmdvfs_supported() && mmdvfs_get_mmdvfs_profile() == MMDVFS_PROFILE_D1_PLUS &&
@@ -5920,9 +5915,6 @@ int primary_display_resume(void)
 #ifdef CONFIG_SINGLE_PANEL_OUTPUT
 	dpmgr_reset_module_handle(pgc->dpmgr_handle);
 #endif
-//start 2016.04.04 add by lijianbin for lcd power lijianbin@yulong.com
-    lcm_vddi_power_on();
-//end 2016.04.04 add by lijianbin for lcd power lijianbin@yulong.com
 	/* For CCF, we move the power on control to noirq_restore in mtkfb */
 	DISPMSG("dpmanager path power on[begin]\n");
 	dpmgr_path_power_on(pgc->dpmgr_handle, CMDQ_DISABLE);

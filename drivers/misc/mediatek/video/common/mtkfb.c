@@ -148,6 +148,7 @@ mtk_dispif_info_t dispif_info[MTKFB_MAX_DISPLAY_COUNT];
 unsigned int FB_LAYER = 2;
 bool is_early_suspended = false;
 char mtkfb_lcm_name[256] = { 0 };
+int lcm_ata_check_flag = 0; //zhangtao add for lcm factory ata test
 /**
  * This mutex is used to prevent tearing due to page flipping when adbd is
  * reading the front buffer
@@ -962,6 +963,69 @@ static int mtkfb_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg
 		up(&sem_early_suspend);
 		return r;
 	}
+
+	case MTKFB_CAPTURE_FRAMEBUFFER:
+	{
+		unsigned long dst_pbuf = 0;
+		unsigned long *src_pbuf = 0;
+		unsigned int pixel_bpp = info->var.bits_per_pixel / 8;
+		unsigned int fbsize = DISP_GetScreenHeight() * DISP_GetScreenWidth() * pixel_bpp;
+
+		if (copy_from_user(&dst_pbuf, (void __user *)arg, sizeof(dst_pbuf))) {
+			DISPERR("[FB]: copy_from_user failed! line:%d\n", __LINE__);
+			r = -EFAULT;
+		} else {
+			src_pbuf = vmalloc(fbsize);
+			if (!src_pbuf) {
+				DISPERR("[FB]: vmalloc capture src_pbuf failed! line:%d\n", __LINE__);
+				r = -EFAULT;
+			} else {
+				dprec_logger_start(DPREC_LOGGER_WDMA_DUMP, 0, 0);
+				primary_display_capture_framebuffer_ovl((unsigned long)src_pbuf,
+					MTK_FB_FORMAT_BGRA8888);
+				dprec_logger_done(DPREC_LOGGER_WDMA_DUMP, 0, 0);
+				if (copy_to_user((unsigned long *)dst_pbuf, src_pbuf, fbsize)) {
+					DISPERR("[FB]: copy_to_user failed! line:%d\n", __LINE__);
+					r = -EFAULT;
+				}
+				vfree(src_pbuf);
+			}
+		}
+
+		return r;
+	}
+
+	case MTKFB_SLT_AUTO_CAPTURE:
+	{
+		struct fb_slt_catpure capConfig;
+		char *dst_buffer;
+		unsigned int fb_size;
+
+		DISPMSG("MTKFB_SLT_AUTO_CAPTURE\n");
+		if (copy_from_user(&capConfig, (void __user *)arg, sizeof(capConfig))) {
+			MTKFB_LOG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
+			r = -EFAULT;
+		} else {
+			dst_buffer = (char *)capConfig.outputBuffer;
+			fb_size = DISP_GetScreenWidth() * DISP_GetScreenHeight() * 4;
+			if (!capConfig.outputBuffer) {
+				DISPERR("[FB]: vmalloc capture outputBuffer failed! line:%d\n", __LINE__);
+				r = -EFAULT;
+			} else {
+				capConfig.outputBuffer = vmalloc(fb_size);
+				primary_display_capture_framebuffer_ovl((unsigned long)capConfig.outputBuffer,
+					capConfig.format);
+				if (copy_to_user(dst_buffer, (char *)capConfig.outputBuffer, fb_size)) {
+					DISPERR("[FB]: copy_to_user failed! line:%d\n", __LINE__);
+					r = -EFAULT;
+				}
+				vfree((char *)capConfig.outputBuffer);
+			}
+		}
+
+		return r;
+	}
+
 	case MTKFB_GET_OVERLAY_LAYER_INFO:
 	{
 		struct fb_overlay_layer_info layerInfo;
@@ -1013,6 +1077,7 @@ static int mtkfb_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg
 				input = &session_input.config[session_input.config_layer_num++];
 				_convert_fb_layer_to_disp_input(layerInfo, input);
 			}
+
 
 			primary_display_config_input_multiple(&session_input);
 			primary_display_trigger(1, NULL, 0);
@@ -1840,6 +1905,10 @@ static int __parse_tag_videolfb(struct device_node *node)
 		vramsize = videolfb_tag->vram;
 		fb_base = videolfb_tag->fb_base;
 		is_lcm_inited = 1;
+		if (islcmconnected)
+			lcm_ata_check_flag = 1;
+		else
+			lcm_ata_check_flag = 0;
 		return 0;
 	}
 
@@ -2158,13 +2227,7 @@ static int update_test_kthread(void *data)
 	return 0;
 }
 #endif
-/*** add for display lcd info in factory mode by xuzhixian@yulong.com 20150325 start ***/
-extern int get_device_info(char* buf);
-/*** add for display lcd info in factory mode by xuzhixian@yulong.com 20150325 end ***/
-/*** add for display lcd note in fastmmi mode by yangli@yulong.com 20160125 start ***/
-unsigned char yulong_lcd_type[50]={0};
-/*** add for display lcd note in fastmmi mode by yangli@yulong.com 20160125 end ***/
-int  lcd_hx8394f = 0;//2016.03.22 lijianbin@yulong.com add by lijianbin for hx8394f esd
+
 static int mtkfb_probe(struct device *dev)
 {
 	struct mtkfb_device *fbdev = NULL;
@@ -2298,31 +2361,7 @@ static int mtkfb_probe(struct device *dev)
 	init_state++; /* 2 */
 
 	/* Register to system */
-//2016.03.22 lijianbin@yulong.com add by lijianbin for hx8394f esd
-    if(NULL != mtkfb_lcm_name)
-    {
-        if(strstr(mtkfb_lcm_name,"hx8394f")!=NULL)
-        {
-            lcd_hx8394f = 1;
-        }
-        else
-        {
-            lcd_hx8394f = 0;
-        }
-    }
-//2016.03.22 lijianbin@yulong.com add by lijianbin for hx8394f esd
-    /*** add for display lcd type in factory&fastmmi mode by xuzhixian@yulong.com 20150325 start ***/
-    if(NULL != mtkfb_lcm_name)
-    {
-        sprintf(yulong_lcd_type,"LCD: %s\n",mtkfb_lcm_name);
-        get_device_info(yulong_lcd_type);
-    }
-    else
-    {
-        sprintf(yulong_lcd_type,"LCD: unknown LCD driver\n");
-        get_device_info(yulong_lcd_type);
-    }
-    /*** add for display lcd type in factory&fastmmi mode by xuzhixian@yulong.com 20150325 end ***/
+
 	r = mtkfb_fbinfo_init(fbi);
 	if (r) {
 		DISPERR("mtkfb_fbinfo_init fail, r = %d\n", r);

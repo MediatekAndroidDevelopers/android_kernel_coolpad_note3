@@ -166,7 +166,7 @@ void Panel_Master_DDIC_config(void)
 
 	struct list_head *p;
 	CONFIG_RECORD_LIST *node;
-
+	mutex_lock(&fb_config_lock);
 	list_for_each_prev(p, &head_list.list) {
 		node = list_entry(p, CONFIG_RECORD_LIST, list);
 		switch (node->record.type) {
@@ -184,6 +184,7 @@ void Panel_Master_DDIC_config(void)
 		}
 
 	}
+	mutex_unlock(&fb_config_lock);
 
 }
 
@@ -209,7 +210,7 @@ static void free_list_memory(void)
 {
 	struct list_head *p, *n;
 	CONFIG_RECORD_LIST *print;
-
+	mutex_lock(&fb_config_lock);
 	list_for_each_safe(p, n, &head_list.list) {
 		print = list_entry(p, CONFIG_RECORD_LIST, list);
 		list_del(&print->list);
@@ -220,6 +221,7 @@ static void free_list_memory(void)
 		pr_debug("*****list is empty!!\n");
 	else
 		pr_debug("*****list is NOT empty!!\n");
+	mutex_unlock(&fb_config_lock);
 
 }
 
@@ -1378,10 +1380,13 @@ static const struct file_operations fbconfig_fops = {
 
 void PanelMaster_Init(void)
 {
+#if defined(CONFIG_MT_ENG_BUILD)
 	ConfigPara_dbgfs = debugfs_create_file("fbconfig",
 					       S_IFREG | S_IRUGO, NULL, (void *)0, &fbconfig_fops);
+#endif
 
 	INIT_LIST_HEAD(&head_list.list);
+	mutex_init(&fb_config_lock);
 }
 
 void PanelMaster_Deinit(void)

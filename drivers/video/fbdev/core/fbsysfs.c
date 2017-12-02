@@ -25,7 +25,7 @@
 
 #define FB_SYSFS_FLAG_ATTR 1
 /*** add for display note in fastmmi mode by yangli@yulong.com 20160125 start ***/
-extern unsigned char yulong_lcd_type[50];
+//extern unsigned char yulong_lcd_type[50];
 /*** add for display note in  fastmmi mode by yangli@yulong.com 20160125 end ***/
 
 /**
@@ -429,7 +429,7 @@ static ssize_t store_fbstate(struct device *device,
 static ssize_t show_lcd_type(struct device *device,
             struct device_attribute *attr, char *buf)
 {
-    return snprintf(buf, PAGE_SIZE, "%s\n", yulong_lcd_type);
+    return 0;
 }
 
 static ssize_t store_lcd_type(struct device *device,

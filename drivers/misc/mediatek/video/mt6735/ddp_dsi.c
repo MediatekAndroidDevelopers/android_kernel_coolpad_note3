@@ -50,7 +50,7 @@ atomic_t PMaster_enable = ATOMIC_INIT(0);
 #define IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII 0
 static int dsi_reg_op_debug;
 #include <mt-plat/sync_write.h>
-extern int  lcd_hx8394f;//2016.03.22 lijianbin@yulong.com add by lijianbin for hx8394f esd
+
 #ifndef CONFIG_MTK_CLKMGR
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -3971,19 +3971,10 @@ int ddp_dsi_build_cmdq(DISP_MODULE_ENUM module, void *cmdq_trigger_handle, CMDQ_
 			t0.CONFG = 0x04;	/* BTA */
 			t0.Data0 = dsi_params->lcm_esd_check_table[i].cmd;
 			/* / 0xB0 is used to distinguish DCS cmd or Gerneric cmd, is that Right??? */
-//2016.03.22 lijianbin@yulong.com add by lijianbin for hx8394f esd
-			if(0 != lcd_hx8394f)
-			{
-                t0.Data_ID = DSI_GERNERIC_READ_LONG_PACKET_ID;
-			}
-			else
-			{
 			t0.Data_ID =
 			    (t0.Data0 <
 			     0xB0) ? DSI_DCS_READ_PACKET_ID :
 			    DSI_GERNERIC_READ_LONG_PACKET_ID;
-			}
-//2016.03.22 lijianbin@yulong.com add by lijianbin for hx8394f esd
 			t0.Data1 = 0;
 
 			/* write DSI CMDQ */

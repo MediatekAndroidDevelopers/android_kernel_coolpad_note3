@@ -25,7 +25,6 @@
 
 #if defined(MTK_LCM_DEVICE_TREE_SUPPORT)
 #include <linux/of.h>
-#include <linux/yl_lcd.h>
 #endif
 
 int _lcm_count(void)
@@ -231,19 +230,11 @@ int disp_of_getprop_u8(const struct device_node *np, const char *propname, u8 *o
 
 void parse_lcm_params_dt_node(struct device_node *np, LCM_PARAMS *lcm_params)
 {
-	static const char *panel_name;
 	if (!lcm_params) {
 		pr_err("%s:%d, ERROR: Error access to LCM_PARAMS(NULL)\n", __FILE__, __LINE__);
 		return;
 	}
 
-	panel_name = of_get_property(np, "lcm_params-lcd_type", NULL);
-	if (!panel_name) {
-	     pr_err("%s: ERROR: Error panel_name not specifid \n",__func__);
-	}else{
-	     get_panel_name(panel_name);
-	     pr_info("%s: Panel Name = %s\n", __func__, panel_name);
-	}
 	memset(lcm_params, 0x0, sizeof(LCM_PARAMS));
 
 	disp_of_getprop_u32(np, "lcm_params-types", &lcm_params->type);
@@ -913,7 +904,6 @@ disp_lcm_handle *disp_lcm_probe(char *plcm_name, LCM_INTERFACE_ID lcm_id, int is
 	LCM_DRIVER *lcm_drv = NULL;
 	LCM_PARAMS *lcm_param = NULL;
 	disp_lcm_handle *plcm = NULL;
-	int m = 0;
 
 	DISPMSG("%s\n", __func__);
 	DISPMSG("plcm_name=%s\n", plcm_name);
@@ -958,16 +948,11 @@ disp_lcm_handle *disp_lcm_probe(char *plcm_name, LCM_INTERFACE_ID lcm_id, int is
 				    ("FATAL ERROR!!!LCM Driver defined in kernel is different with LK\n");
 				return NULL;
 			}
-#endif	
-//			if (strcmp(lcm_drv->name, plcm_name)) {
-//				DISPERR("FATAL ERROR!!!LCM Driver defined in kernel is different with LK\n");
-//				return NULL;
-//			}
 
 			isLCMInited = true;
 			isLCMFound = true;
 		}
-	  lcmindex = 0;
+		lcmindex = 0;
 	} else {
 		if (plcm_name == NULL) {
 			/* TODO: we need to detect all the lcm driver */
