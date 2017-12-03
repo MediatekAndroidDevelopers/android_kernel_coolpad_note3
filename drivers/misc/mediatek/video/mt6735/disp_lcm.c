@@ -179,6 +179,12 @@ void _dump_lcm_info(disp_lcm_handle *plcm)
 }
 
 #if defined(MTK_LCM_DEVICE_TREE_SUPPORT)
+#define INIT_SIZE			(sizeof(LCM_DATA)*256)
+#define COMPARE_ID_SIZE			(sizeof(LCM_DATA)*32)
+#define SUSPEND_SIZE			(sizeof(LCM_DATA)*32)
+#define BACKLIGHT_SIZE			(sizeof(LCM_DATA)*32)
+#define MAX_SIZE			(MAX(MAX(MAX(INIT_SIZE, COMPARE_ID_SIZE), SUSPEND_SIZE), BACKLIGHT_SIZE))
+
 static unsigned char dts[sizeof(LCM_DATA)*MAX_SIZE];
 static LCM_DTS lcm_dts;
 
@@ -749,7 +755,7 @@ void parse_lcm_ops_dt_node(struct device_node *np, LCM_DTS *lcm_dts, unsigned ch
 			return;
 		}
 	}
-
+#if 0
 	/* parse LCM backlight cmdq table */
 	len = disp_of_getprop_u8(np, "backlight_cmdq", dts);
 	if (len <= 0) {
@@ -820,6 +826,7 @@ void parse_lcm_ops_dt_node(struct device_node *np, LCM_DTS *lcm_dts, unsigned ch
 			return;
 		}
 	}
+#endif
 }
 
 int check_lcm_node_from_DT(void)
