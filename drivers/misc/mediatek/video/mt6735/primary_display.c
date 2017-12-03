@@ -149,6 +149,9 @@ disp_ddp_path_config last_primary_config;
 static struct switch_dev disp_switch_data;
 #endif
 
+extern void lcm_vddi_power_on(void);
+extern void lcm_vddi_power_off(void);
+
 void enqueue_buffer(display_primary_path_context *ctx, struct list_head *head,
 		    disp_internal_buffer_info *buf)
 {
@@ -5853,6 +5856,8 @@ int primary_display_suspend(void)
 	dpmgr_path_power_off(pgc->dpmgr_handle, CMDQ_DISABLE);
 	DISPMSG("[POWER]dpmanager path power off[end]\n");
 
+    	lcm_vddi_power_off();
+
 	if (_is_decouple_mode(pgc->session_mode)) {
 		dpmgr_path_power_off(pgc->ovl2mem_path_handle, CMDQ_DISABLE);
 	} else if (is_mmdvfs_supported() && mmdvfs_get_mmdvfs_profile() == MMDVFS_PROFILE_D1_PLUS &&
@@ -5915,6 +5920,8 @@ int primary_display_resume(void)
 #ifdef CONFIG_SINGLE_PANEL_OUTPUT
 	dpmgr_reset_module_handle(pgc->dpmgr_handle);
 #endif
+    	lcm_vddi_power_on();
+
 	/* For CCF, we move the power on control to noirq_restore in mtkfb */
 	DISPMSG("dpmanager path power on[begin]\n");
 	dpmgr_path_power_on(pgc->dpmgr_handle, CMDQ_DISABLE);

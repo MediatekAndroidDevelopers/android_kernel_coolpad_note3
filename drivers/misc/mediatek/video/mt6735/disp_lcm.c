@@ -857,7 +857,7 @@ int check_lcm_node_from_DT(void)
 	return 0;
 }
 
-void load_lcm_resources_from_DT(LCM_DRIVER *lcm_drv)
+void load_lcm_resources_from_DT(LCM_DRIVER *lcm_drv, int i)
 {
 	char lcm_node[128] = { 0 };
 	struct device_node *np = NULL;
@@ -871,7 +871,7 @@ void load_lcm_resources_from_DT(LCM_DRIVER *lcm_drv)
 
 	memset((unsigned char *)parse_dts, 0x0, sizeof(LCM_DTS));
 
-	sprintf(lcm_node, "mediatek,lcm_params-%s", lcm_name_list[0]);
+	sprintf(lcm_node, "mediatek,lcm_params-%s", lcm_name_list[i]);
 	pr_debug("LCM PARAMS DT compatible: %s\n", lcm_node);
 
 	/* Load LCM parameters from DT */
@@ -881,7 +881,7 @@ void load_lcm_resources_from_DT(LCM_DRIVER *lcm_drv)
 	else
 		parse_lcm_params_dt_node(np, &(parse_dts->params));
 
-	sprintf(lcm_node, "mediatek,lcm_ops-%s", lcm_name_list[0]);
+	sprintf(lcm_node, "mediatek,lcm_ops-%s", lcm_name_list[i]);
 	pr_debug("LCM OPS DT compatible: %s\n", lcm_node);
 
 	/* Load LCM parameters from DT */
@@ -906,6 +906,7 @@ disp_lcm_handle *disp_lcm_probe(char *plcm_name, LCM_INTERFACE_ID lcm_id, int is
 
 #if defined(MTK_LCM_DEVICE_TREE_SUPPORT)
 	bool isLCMDtFound = false;
+	int m = 0;
 #endif
 
 	LCM_DRIVER *lcm_drv = NULL;
@@ -918,12 +919,11 @@ disp_lcm_handle *disp_lcm_probe(char *plcm_name, LCM_INTERFACE_ID lcm_id, int is
 #if defined(MTK_LCM_DEVICE_TREE_SUPPORT)
 	if (check_lcm_node_from_DT() == 0) {
 		lcm_drv = &lcm_common_drv;
-		lcm_drv->name = lcm_name_list[0];
-		if (strcmp(lcm_drv->name, plcm_name)) {
-			DISPERR
-			("FATAL ERROR!!!LCM Driver defined in kernel(%s) is different with LK(%s)\n",
-			lcm_drv->name, plcm_name);
-			return NULL;
+	        for (m = 0; m < lcm_name_count; m++) {
+			lcm_drv->name = lcm_name_list[m];
+			if (!strcmp(lcm_drv->name, plcm_name)) {
+				break;
+			}
 		}
 
 		isLCMInited = true;
@@ -1001,7 +1001,7 @@ disp_lcm_handle *disp_lcm_probe(char *plcm_name, LCM_INTERFACE_ID lcm_id, int is
 
 #if defined(MTK_LCM_DEVICE_TREE_SUPPORT)
 	if (isLCMDtFound == true)
-		load_lcm_resources_from_DT(plcm->drv);
+		load_lcm_resources_from_DT(plcm->drv, m);
 #endif
 
 	{
