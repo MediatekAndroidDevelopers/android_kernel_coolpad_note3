@@ -266,7 +266,6 @@ config ARCH_MEDIATEK
 	select HAVE_SMP
 	select NEED_MACH_MEMORY_H
 	select IRQ_DOMAIN
-	select IRQ_DOMAIN_DEBUG
 	select GENERIC_SCHED_CLOCK
 	select ARMV7_COMPAT
 	select ARMV7_COMPAT_CPUINFO
@@ -284,7 +283,6 @@ config ARCH_MT6735
 	select HAVE_SMP
 	select NEED_MACH_MEMORY_H
 	select IRQ_DOMAIN
-	select IRQ_DOMAIN_DEBUG
 	select GENERIC_SCHED_CLOCK
 	select MTK_SYSTRACKER
 	select MTK_SYS_CIRQ
@@ -316,7 +314,6 @@ config ARCH_MT6753
 	select HAVE_SMP
 	select NEED_MACH_MEMORY_H
 	select IRQ_DOMAIN
-	select IRQ_DOMAIN_DEBUG
 	select GENERIC_SCHED_CLOCK
 	select MTK_SYSTRACKER
 	select MTK_SYS_CIRQ
@@ -352,7 +349,6 @@ config ARCH_MT6755
 	select HAVE_SMP
 	select NEED_MACH_MEMORY_H
 	select IRQ_DOMAIN
-	select IRQ_DOMAIN_DEBUG
 	select GENERIC_SCHED_CLOCK
 	select MTK_SYS_CIRQ
 	select MTK_EIC
@@ -385,7 +381,6 @@ config ARCH_MT6797
 	select HAVE_SMP
 	select NEED_MACH_MEMORY_H
 	select IRQ_DOMAIN
-	select IRQ_DOMAIN_DEBUG
 	select GENERIC_SCHED_CLOCK
 	select MTK_SYS_CIRQ
 	select MTK_EIC
@@ -440,7 +435,6 @@ config ARCH_MT6735M
 	select HAVE_SMP
 	select NEED_MACH_MEMORY_H
 	select IRQ_DOMAIN
-	select IRQ_DOMAIN_DEBUG
 	select GENERIC_SCHED_CLOCK
 	select MTK_SYSTRACKER
 	select MTK_SYS_CIRQ
