@@ -2887,4 +2887,6 @@ static inline bool is_sidechannel_device(const struct inode *inode)
 	return ((S_ISCHR(mode) || S_ISBLK(mode)) && (mode & (S_IROTH | S_IWOTH)));
 }
 
+extern void inode_nohighmem(struct inode *inode);
+
 #endif /* _LINUX_FS_H */
