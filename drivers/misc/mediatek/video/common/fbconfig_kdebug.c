@@ -119,7 +119,6 @@ static PM_TOOL_T pm_params = {
 	.pLcm_drv = NULL,
 };
 struct mutex fb_config_lock;
-
 static void *pm_get_handle(void)
 {
 	return (void *)&pm_params;
@@ -185,26 +184,7 @@ void Panel_Master_DDIC_config(void)
 
 	}
 	mutex_unlock(&fb_config_lock);
-
 }
-
-/*static void print_from_head_to_tail(void)
-{
-	int i;
-	struct list_head *p;
-	CONFIG_RECORD_LIST *print;
-	pr_debug("DDIC=====>:print_from_head_to_tail  START\n");
-
-	list_for_each_prev(p, &head_list.list) {
-		print = list_entry(p, CONFIG_RECORD_LIST, list);
-		pr_debug("type:%d num %d value:\r\n", print->record.type, print->record.ins_num);
-		for (i = 0; i < print->record.ins_num; i++)
-			pr_debug("0x%x\t", print->record.ins_array[i]);
-		pr_debug("\r\n");
-	}
-	pr_debug("DDIC=====>:print_from_head_to_tail  END\n");
-
-}*/
 
 static void free_list_memory(void)
 {
@@ -531,17 +511,25 @@ static long fbconfig_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 	{
 		ESD_PARA esd_para;
 		uint8_t *buffer = NULL;
+		int buffer_size;
 
 		copy_ret_val = copy_from_user(&esd_para, argp, sizeof(esd_para));
 		if (copy_ret_val != 0) {
 			pr_debug("fbconfig=>LCM_GET_ESD copy_from_user failed @line %d\n", __LINE__);
 			return -EFAULT;
 		}
-		if (esd_para.para_num <= 0) {
+		if (esd_para.para_num <= 0 || esd_para.para_num > 100) {
 			pr_debug("fbconfig=>LCM_GET_ESD para_num:%d < 0\n", esd_para.para_num);
-			return -1;
+			return -EINVAL;
 		}
-		buffer = kzalloc(esd_para.para_num + 6, GFP_KERNEL);
+
+		buffer_size = esd_para.para_num + 6;
+		if (buffer_size < 0) {
+			pr_debug("buffer size overflow: buffer_size:%d, para_num:%d\n",
+				buffer_size, esd_para.para_num);
+			return -EINVAL;
+		}
+		buffer = kzalloc(buffer_size, GFP_KERNEL);
 		if (buffer == NULL)
 			return -ENOMEM;
 
