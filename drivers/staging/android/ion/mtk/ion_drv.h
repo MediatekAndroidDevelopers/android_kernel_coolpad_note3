@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __ION_DRV_H__
 #define __ION_DRV_H__
 #include <linux/version.h>
@@ -10,7 +23,8 @@
 
 typedef enum {
 	ION_CMD_SYSTEM,
-	ION_CMD_MULTIMEDIA
+	ION_CMD_MULTIMEDIA,
+	ION_CMD_MULTIMEDIA_SEC
 } ION_CMDS;
 
 typedef enum {
@@ -45,6 +59,11 @@ typedef enum {
 typedef enum {
 	ION_ERROR_CONFIG_LOCKED = 0x10000
 } ION_ERROR_E;
+
+/* mm or mm_sec heap flag which is do not conflist with ION_HEAP_FLAG_DEFER_FREE */
+#define ION_FLAG_MM_HEAP_INIT_ZERO (1 << 16)
+#define ION_FLAG_MM_HEAP_SEC_PA (1 << 18)
+
 
 typedef struct ion_sys_cache_sync_param {
 	union {
@@ -92,7 +111,7 @@ typedef struct ion_sys_get_phys_param {
 	unsigned long len;
 } ion_sys_get_phys_param_t;
 
-#define ION_MM_DBG_NAME_LEN 16
+#define ION_MM_DBG_NAME_LEN 48
 #define ION_MM_SF_BUF_INFO_LEN 16
 
 typedef struct __ion_sys_client_name {
@@ -139,6 +158,8 @@ typedef struct ion_mm_config_buffer_param {
 	int eModuleID;
 	unsigned int security;
 	unsigned int coherent;
+	unsigned int reserve_iova_start;
+	unsigned int reserve_iova_end;
 } ion_mm_config_buffer_param_t;
 
 
@@ -167,7 +188,6 @@ typedef struct ion_mm_data {
 	union {
 		ion_mm_config_buffer_param_t config_buffer_param;
 		ion_mm_buf_debug_info_t buf_debug_info_param;
-		ion_mm_sf_buf_info_t sf_buf_info_param;
 	};
 } ion_mm_data_t;
 
@@ -180,6 +200,11 @@ typedef struct ion_mm_data {
 	snprintf(ion_name, 100, "["ION_LOG_TAG"]"string, ##args); \
 	aee_kernel_warning(ion_name, "["ION_LOG_TAG"]error:"string, ##args);  \
 } while (0)
+#ifdef ION_DBG
+#define IONDBG(string, args...)	pr_err("[ION]"string, ##args)
+#else
+#define IONDBG(string, args...)
+#endif
 
 /* Exported global variables */
 extern struct ion_device *g_ion_device;
@@ -216,6 +241,10 @@ struct ion_heap *ion_fb_heap_create(struct ion_platform_heap *);
 void ion_fb_heap_destroy(struct ion_heap *);
 
 int ion_device_destroy_heaps(struct ion_device *dev);
+
+struct ion_heap *ion_sec_heap_create(struct ion_platform_heap *unused);
+void ion_sec_heap_destroy(struct ion_heap *heap);
+void ion_sec_heap_dump_info(void);
 
 #endif
 
