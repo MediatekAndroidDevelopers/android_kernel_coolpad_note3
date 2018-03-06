@@ -2887,8 +2887,25 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	if (unlikely(!zonelist->_zonerefs->zone))
 		return NULL;
 
-	if (IS_ENABLED(CONFIG_CMA) && migratetype == MIGRATE_MOVABLE)
+	/*
+	 * add special case when gfp_mask only have __GFP_HIGHMEM + __GFP_CMA,
+	 * reassign high_zoneidx to select zone_movable as first choice
+	 */
+	if ((gfp_mask & (GFP_ZONEMASK|__GFP_CMA)) == (__GFP_HIGHMEM | __GFP_CMA)) {
+		gfp_mask |= __GFP_MOVABLE;
+		high_zoneidx = gfp_zone(gfp_mask);
+		migratetype = gfpflags_to_migratetype(gfp_mask);
+	}
+
+	if (IS_ENABLED(CONFIG_CMA) && migratetype == MIGRATE_MOVABLE) {
+		if (gfp_mask & __GFP_CMA) {
+			/* Assign high watermakr for __GFP_CMA page allocation */
+
+			alloc_flags &= ~ALLOC_WMARK_MASK;
+			alloc_flags |= ALLOC_WMARK_HIGH;
+		}
 		alloc_flags |= ALLOC_CMA;
+	}
 
 retry_cpuset:
 	cpuset_mems_cookie = read_mems_allowed_begin();
