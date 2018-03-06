@@ -54,6 +54,8 @@
 
 /* ----------------------------------------------------------------------------- */
 static SYSRAM_STRUCT Sysram;
+static MUINT32 Keep_Table;
+static bool Flush_before;
 /* ------------------------------------------------------------------------------ */
 static void SYSRAM_GetTime(MUINT64 *pUS64, MUINT32 *pSec, MUINT32 *pUSec)
 {
@@ -651,7 +653,7 @@ static int SYSRAM_Open(struct inode *pInode, struct file *pFile)
 		pProc = (SYSRAM_PROC_STRUCT *) (pFile->private_data);
 		pProc->Pid = 0;
 		pProc->Tgid = 0;
-		strcpy(pProc->ProcName, SYSRAM_PROC_NAME);
+		strncpy(pProc->ProcName, SYSRAM_PROC_NAME, sizeof(SYSRAM_PROC_NAME));
 		pProc->Table = 0;
 		pProc->Time64 = Time64;
 		pProc->TimeS = Sec;
@@ -789,6 +791,8 @@ static int SYSRAM_Flush(struct file *pFile, fl_owner_t Id)
 					   USec);
 					 */
 					SYSRAM_DumpLayout();
+					Keep_Table = pProc->Table;
+					Flush_before = true;
 					/*  */
 					for (Index = 0; Index < SYSRAM_USER_AMOUNT; Index++) {
 					/**/	if (pProc->Table & (1 << Index)) {
@@ -797,6 +801,8 @@ static int SYSRAM_Flush(struct file *pFile, fl_owner_t Id)
 					}
 					/*  */
 					pProc->Table = 0;
+					LOG_WRN("Force to release - (0x%X/0x%X)",
+						(unsigned int)(Keep_Table), (unsigned int)(pProc->Table));
 				}
 			}
 
@@ -817,9 +823,10 @@ static int SYSRAM_Flush(struct file *pFile, fl_owner_t Id)
 }
 
 /* ------------------------------------------------------------------------------ */
+/*
 static int SYSRAM_mmap(struct file *pFile, struct vm_area_struct *pVma)
 {
-	/* LOG_MSG(""); */
+	// LOG_MSG("");
 	long length = 0;
 	MUINT32 pfn = 0x0;
 
@@ -844,7 +851,7 @@ static int SYSRAM_mmap(struct file *pFile, struct vm_area_struct *pVma)
 	}
 	return 0;
 }
-
+*/
 /* ------------------------------------------------------------------------------ */
 static long SYSRAM_Ioctl(struct file *pFile, unsigned int Cmd, unsigned long Param)
 {
@@ -890,7 +897,7 @@ static long SYSRAM_Ioctl(struct file *pFile, unsigned int Cmd, unsigned long Par
 					if (pProc->Tgid == 0) {
 						pProc->Pid = current->pid;
 						pProc->Tgid = current->tgid;
-						strcpy(pProc->ProcName, current->comm);
+						strncpy(pProc->ProcName, current->comm, strlen(current->comm));
 						SYSRAM_SpinUnlock();
 					} else {
 						SYSRAM_SpinUnlock();
@@ -900,7 +907,8 @@ static long SYSRAM_Ioctl(struct file *pFile, unsigned int Cmd, unsigned long Par
 						}
 					}
 				} else {
-					LOG_MSG("[christ test] SYSRAM_ALLOC E.6 ");
+					LOG_ERR("wrong Alloc.Addr(%d/0x%x/0x%x)",
+						Alloc.User, (unsigned int)(Alloc.Addr), (unsigned int)(pProc->Table));
 					Ret = -EFAULT;
 				}
 				/*  */
@@ -919,36 +927,52 @@ static long SYSRAM_Ioctl(struct file *pFile, unsigned int Cmd, unsigned long Par
 		/*  */
 	case SYSRAM_FREE:
 		{
-			if (copy_from_user(&User, (void *)Param, sizeof(SYSRAM_USER_ENUM)) == 0) {
-				if (SYSRAM_IsBadOwner(User)) {
-					LOG_ERR("User(%d) out of range(%d)", User,
-						SYSRAM_USER_AMOUNT);
-					Ret = -EFAULT;
-					goto EXIT;
-				}
-				/*  */
-				SYSRAM_SpinLock();
-				if ((pProc->Table) & (1 << User)) {
-					SYSRAM_SpinUnlock();
-					SYSRAM_IOC_Free(User);
-					SYSRAM_SpinLock();
-					/*  */
-					pProc->Table &= (~(1 << User));
-					if (pProc->Table == 0) {
-						pProc->Pid = 0;
-						pProc->Tgid = 0;
-						strcpy(pProc->ProcName, SYSRAM_PROC_NAME);
-					}
-					SYSRAM_SpinUnlock();
-				} else {
-					SYSRAM_SpinUnlock();
-					LOG_WRN("Freeing unallocated buffer user(%d)", User);
-					Ret = -EFAULT;
-				}
-			} else {
-				LOG_ERR("copy_from_user fail");
+		if (copy_from_user(&User, (void *)Param, sizeof(SYSRAM_USER_ENUM)) == 0) {
+			if (SYSRAM_IsBadOwner(User)) {
+				LOG_ERR("User(%d) out of range(%d)", User,
+					SYSRAM_USER_AMOUNT);
 				Ret = -EFAULT;
+				goto EXIT;
 			}
+			/*  */
+			SYSRAM_SpinLock();
+			if ((pProc->Table) & (1 << User)) {
+				SYSRAM_SpinUnlock();
+				SYSRAM_IOC_Free(User);
+				SYSRAM_SpinLock();
+				/*  */
+				pProc->Table &= (~(1 << User));
+				if (pProc->Table == 0) {
+					pProc->Pid = 0;
+					pProc->Tgid = 0;
+					strncpy(pProc->ProcName, SYSRAM_PROC_NAME, sizeof(SYSRAM_PROC_NAME));
+				}
+				SYSRAM_SpinUnlock();
+			} else {
+				SYSRAM_SpinUnlock();
+				LOG_ERR("Freeing unallocated buffer user(%d/0x%x/0x%X)", User,
+					(unsigned int)(pProc->Table), (unsigned int)(Keep_Table));
+				SYSRAM_SpinLock();
+				if (Flush_before || ((Keep_Table) & (1 << User))) {
+					LOG_WRN("WRN, flush before(%d), MASK(0x%X/0x%X)",
+						Flush_before, (unsigned int)(pProc->Table),
+						(unsigned int)(Keep_Table));
+					Keep_Table &= ~(1 << User);
+					LOG_WRN("WRN_2, flush before(%d), MASK(0x%X/0x%X)",
+						Flush_before, (unsigned int)(pProc->Table),
+						(unsigned int)(Keep_Table));
+					if ((int)Keep_Table == 0)
+						Flush_before = false;
+					Ret = 0;
+				} else {
+					Ret = -EFAULT;
+				}
+				SYSRAM_SpinUnlock();
+			}
+		} else {
+			LOG_ERR("copy_from_user fail");
+			Ret = -EFAULT;
+		}
 			break;
 		}
 	case SYSRAM_DUMP:
@@ -1114,7 +1138,7 @@ static const struct file_operations SysramFileOper = {
 	.release = SYSRAM_Release,
 	.flush = SYSRAM_Flush,
 	.unlocked_ioctl = SYSRAM_Ioctl,
-	.mmap = SYSRAM_mmap,
+	/*.mmap = SYSRAM_mmap,*/
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = SYSRAM_ioctl_compat,
 #endif
@@ -1188,6 +1212,8 @@ static int SYSRAM_Probe(struct platform_device *pDev)
 	memset(Sysram.UserInfo, 0, sizeof(Sysram.UserInfo));
 	init_waitqueue_head(&Sysram.WaitQueueHead);
 	Sysram.EnableClk = MFALSE;
+	Keep_Table = 0x0;
+	Flush_before = false;
 	/*  */
 	for (Index = 0; Index < SYSRAM_MEM_BANK_AMOUNT; Index++) {
 		SysramMemPoolInfo[Index].pMemNode[0].User = SYSRAM_USER_NONE;
@@ -1268,112 +1294,24 @@ static struct platform_driver SysramPlatformDriver = {
 static ssize_t SYSRAM_DumpLayoutToProc(struct file *pPage,
 				char __user *pBuffer, size_t Count, loff_t *Off)
 {
-	char *p = (char*)pPage;
-           char** ppStart=NULL;
-	long len = 0;
-	MUINT32 Index = 0;
-           long ret = 0;
-	SYSRAM_MEM_NODE_STRUCT *pCurrNode = NULL;
-	/*  */
-	p += sprintf(p, "\n[SYSRAM_DumpLayoutToProc]\n");
-	p += sprintf(p, "AllocatedTbl = 0x%08lX\n", Sysram.AllocatedTbl);
-	p += sprintf(p, "=========================================\n");
-	for (Index = 0; Index < SYSRAM_MEM_BANK_AMOUNT; Index++) {
-		p += sprintf(p, "\n [Mem Pool %ld] (IndexTbl, UserCount)=(%lX, %ld)\n",
-			     Index,
-			     SysramMemPoolInfo[Index].IndexTbl, SysramMemPoolInfo[Index].UserCount);
-		p += sprintf(p,
-			     "[Locked Time] [Owner   Offset   Size  Index pCurrent pPrevious pNext]  [pid tgid] [Proc Name / Owner Name]\n");
-		pCurrNode = &SysramMemPoolInfo[Index].pMemNode[0];
-		while (NULL != pCurrNode) {
-			SYSRAM_USER_ENUM const User = pCurrNode->User;
-			if (SYSRAM_IsBadOwner(User)) {
-				p += sprintf(p,
-					     "------------ --------"
-					     " %2d\t0x%05lX 0x%05lX  %ld    %p %p\t%p\n",
-					     pCurrNode->User,
-					     pCurrNode->Offset,
-					     pCurrNode->Length,
-					     pCurrNode->Index,
-					     pCurrNode, pCurrNode->pPrev, pCurrNode->pNext);
-			} else {
-				SYSRAM_USER_STRUCT * const pUserInfo = &Sysram.UserInfo[User];
-				p += sprintf(p,
-					     "%5lu.%06lu"
-					     " %2d\t0x%05lX 0x%05lX  %ld    %p %p\t%p"
-					     "  %-4d %-4d \"%s\" / \"%s\"\n",
-					     pUserInfo->TimeS,
-					     pUserInfo->TimeUS,
-					     User,
-					     pCurrNode->Offset,
-					     pCurrNode->Length,
-					     pCurrNode->Index,
-					     pCurrNode,
-					     pCurrNode->pPrev,
-					     pCurrNode->pNext,
-					     pUserInfo->pid,
-					     pUserInfo->tgid,
-					     pUserInfo->ProcName, SysramUserName[User]);
-			}
-			pCurrNode = pCurrNode->pNext;
-		};
-	}
-	/*  */
-	*ppStart = (char*)((unsigned long)pPage + (unsigned long)Off);
-	len = (MUINT32)((unsigned long)p - (unsigned long)pPage);
-	if (len > (long)Off) {
-		len -= (long)Off;
-	} else {
-		len = 0;
-	}
-           ret = len < Count ? len : Count;
-	/*  */
-	return ((ssize_t)(ret));
+	/*Legacy Function, For Debug Only*/
+	return 0;
 }
 
 /* ------------------------------------------------------------------------------ */
 static ssize_t SYSRAM_ReadFlag(struct file *pPage,
 				char __user *pBuffer, size_t Count, loff_t *Off)
 {
-	char *p = (char*)pPage;
-           char** ppStart=NULL;
-	long len = 0;
-           long ret = 0;
-	/*  */
-	p += sprintf(p, "\r\n[SYSRAM_ReadFlag]\r\n");
-	p += sprintf(p, "=========================================\r\n");
-	p += sprintf(p, "Sysram.DebugFlag = 0x%08lX\r\n", Sysram.DebugFlag);
-
-	*ppStart = (char*)((unsigned long)pPage + (unsigned long)Off);
-
-	len = (long)((unsigned long)p - (unsigned long)pPage);
-	if (len > (long)Off) {
-		len -= (long)Off;
-	} else {
-		len = 0;
-	}
-	ret = len < Count ? len : Count;
-	/*  */
-	return ((ssize_t)(ret));
+	LOG_ERR("SYSRAM_ReadFlag: Not implement");
+	return 0;
 }
 
 /* ------------------------------------------------------------------------------ */
 static ssize_t SYSRAM_WriteFlag(struct file *pFile,
 			    const char __user *pBuffer, size_t Count, loff_t *p_off)
 {
-	char acBuf[32];
-	MUINT32 u4CopySize = 0;
-	MUINT32 u4SysramDbgFlag = 0;
-	/*  */
-	u4CopySize = (Count < (sizeof(acBuf) - 1)) ? Count : (sizeof(acBuf) - 1);
-	if (copy_from_user(acBuf, pBuffer, u4CopySize)) {
-		return 0;
-	}
-	acBuf[u4CopySize] = '\0';
-	if (3 == sscanf(acBuf, "%lx", &u4SysramDbgFlag)) {
-		Sysram.DebugFlag = u4SysramDbgFlag;
-	}
-	return ((ssize_t)Count);
+	LOG_ERR("SYSRAM_WriteFlag: Not implement");
+	return 0;
 }
 
 /*******************************************************************************

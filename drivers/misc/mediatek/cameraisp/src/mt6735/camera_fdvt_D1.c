@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -63,12 +76,13 @@
 #endif
 */
 
-#define LOG_VRB(format, args...)	pr_debug("FDVT" "[%s] " format, __func__, ##args)
-#define LOG_DBG(format, args...)	pr_debug("FDVT" "[%s] " format, __func__, ##args)
-#define LOG_INF(format, args...)	pr_info("FDVT" "[%s] " format, __func__, ##args)
-#define LOG_WRN(format, args...)	pr_warn("FDVT" "[%s] WARNING: " format, __func__, ##args)
-#define LOG_ERR(format, args...)	pr_err("FDVT" "[%s, line%04d] ERROR: " format, __func__, __LINE__, ##args)
-#define LOG_AST(format, args...)	pr_err("FDVT" "[%s, line%04d] ASSERT: " format, __func__, __LINE__, ##args)
+#define LOG_VRB(format, args...)        pr_debug("FDVT" "[%s] " format, __func__, ##args)
+#define LOG_DBG(format, args...)        pr_debug("FDVT" "[%s] " format, __func__, ##args)
+#define LOG_INF(format, args...)        pr_debug("FDVT" "[%s] " format, __func__, ##args)
+/* pr_info has been forbidden after kernel standard */
+#define LOG_WRN(format, args...)        pr_warn("FDVT" "[%s] WARNING: " format, __func__, ##args)
+#define LOG_ERR(format, args...)        pr_err("FDVT" "[%s, line%04d] ERROR: " format, __func__, __LINE__, ##args)
+#define LOG_AST(format, args...)        pr_err("FDVT" "[%s, line%04d] ASSERT: " format, __func__, __LINE__, ##args)
 
 
 static dev_t FDVT_devno;
@@ -76,6 +90,9 @@ static struct cdev *FDVT_cdev;
 static struct class *FDVT_class;
 static wait_queue_head_t g_MT6573FDVTWQ;
 static u32 g_u4MT6573FDVTIRQ = 0 , g_u4MT6573FDVTIRQMSK = 0x00000001;
+/*LukeHu++160420==For SMP*/
+static DEFINE_SPINLOCK(g_spinLock);
+static unsigned int g_drvOpened;
 
 static u8 *pBuff;
 static u8 *pread_buf;
@@ -234,6 +251,8 @@ struct fdvt_device {
 static struct fdvt_device *fdvt_devs;
 static int nr_fdvt_devs;
 #endif
+
+bool haveConfig = 0;
 
 void FDVT_basic_config(void)
 {
@@ -435,12 +454,18 @@ static int MT6573FDVT_SetRegHW(MT6573FDVTRegIO *a_pstCfg)
 {
 	MT6573FDVTRegIO *pREGIO = NULL;
 	u32 i = 0;
-	if (NULL == a_pstCfg) {
+
+	if (a_pstCfg == NULL) {
 		LOG_DBG("Null input argrment\n");
 		return -EINVAL;
 	}
 
 	pREGIO = (MT6573FDVTRegIO *)a_pstCfg;
+
+	if (pREGIO->u4Count > MT6573FDVT_DBUFFREGCNT) {
+		LOG_DBG("Buffer Size Exceeded!\n");
+		return -EFAULT;
+	}
 
 	if (copy_from_user((void *)pMT6573FDVTWRBuff.u4Addr, (void *) pREGIO->pAddr, pREGIO->u4Count * sizeof(u32))) {
 		LOG_DBG("ioctl copy from user failed\n");
@@ -456,8 +481,10 @@ static int MT6573FDVT_SetRegHW(MT6573FDVTRegIO *a_pstCfg)
 	/* LOG_DBG("Count = %d\n", pREGIO->u4Count); */
 
 	for (i = 0; i < pREGIO->u4Count; i++) {
-		if ((FDVT_ADDR + pMT6573FDVTWRBuff.u4Addr[i]) >= FDVT_ADDR && (FDVT_ADDR + pMT6573FDVTWRBuff.u4Addr[i]) <= (FDVT_ADDR + FDVT_MAX_OFFSET)) {
-			/* LOG_DBG("write addr = 0x%08x, data = 0x%08x\n", FDVT_ADDR + pMT6573FDVTWRBuff.u4Addr[i],	pMT6573FDVTWRBuff.u4Data[i]); */
+		if ((FDVT_ADDR + pMT6573FDVTWRBuff.u4Addr[i]) >= FDVT_ADDR &&
+			(FDVT_ADDR + pMT6573FDVTWRBuff.u4Addr[i]) <= (FDVT_ADDR + FDVT_MAX_OFFSET)) {
+			/* LOG_DBG("write addr = 0x%08x, data = 0x%08x\n", FDVT_ADDR + pMT6573FDVTWRBuff.u4Addr[i],
+			pMT6573FDVTWRBuff.u4Data[i]); */
 			FDVT_WR32(pMT6573FDVTWRBuff.u4Data[i], FDVT_ADDR + pMT6573FDVTWRBuff.u4Addr[i]);
 		} else {
 			LOG_ERR("ERROR: Writing Memory(0x%lx) Excess FDVT Range!\n", FDVT_ADDR + pMT6573FDVTWRBuff.u4Addr[i]);
@@ -473,29 +500,38 @@ static int MT6573FDVT_SetRegHW(MT6573FDVTRegIO *a_pstCfg)
 static int MT6573FDVT_ReadRegHW(MT6573FDVTRegIO *a_pstCfg)
 {
 	int ret = 0;
-	int size = a_pstCfg->u4Count * 4;
-	int i;
+	int i = 0;
 
-	if (size > buf_size)
-		LOG_DBG("size too big\n");
+	if (a_pstCfg == NULL) {
+		LOG_DBG("Null input argrment\n");
+		return -EINVAL;
+	}
 
-	if (copy_from_user(pMT6573FDVTRDBuff.u4Addr,  a_pstCfg->pAddr, size) != 0) {
+	if (a_pstCfg->u4Count > MT6573FDVT_DBUFFREGCNT) {
+		LOG_DBG("Buffer Size Exceeded!\n");
+		return -EFAULT;
+	}
+
+	if (copy_from_user(pMT6573FDVTRDBuff.u4Addr,  a_pstCfg->pAddr, a_pstCfg->u4Count * sizeof(u32)) != 0) {
 		LOG_DBG("copy_from_user failed\n");
 		ret = -EFAULT;
 		goto mt_FDVT_read_reg_exit;
 	}
 
 	for (i = 0; i < a_pstCfg->u4Count; i++) {
-		if ((FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]) >= FDVT_ADDR && (FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]) <= (FDVT_ADDR + FDVT_MAX_OFFSET)) {
+		if ((FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]) >= FDVT_ADDR &&
+			(FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]) <= (FDVT_ADDR + FDVT_MAX_OFFSET)) {
 			pMT6573FDVTRDBuff.u4Data[i] = ioread32((void *)(FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]));
-			/* LOG_DBG("AFTER  addr/val: 0x%08x/0x%08x\n", (u32) (FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]), (u32) pMT6573FDVTRDBuff.u4Data[i]); */
+			/* LOG_DBG("AFTER  addr/val: 0x%08x/0x%08x\n",
+			(u32) (FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]), (u32) pMT6573FDVTRDBuff.u4Data[i]); */
 		} else {
-			LOG_ERR("ERROR: Reading Memory(0x%lx) Excess FDVT Range!\n", FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]);
+			/* LOG_DBG("Error: Reading Memory(0x%8x) Excess FDVT Range!\n",
+			FDVT_ADDR + pMT6573FDVTRDBuff.u4Addr[i]); */
 			ret = -EFAULT;
 			goto mt_FDVT_read_reg_exit;
 		}
 	}
-	if (copy_to_user(a_pstCfg->pData, pMT6573FDVTRDBuff.u4Data, size) != 0) {
+	if (copy_to_user(a_pstCfg->pData, pMT6573FDVTRDBuff.u4Data, a_pstCfg->u4Count * sizeof(u32)) != 0) {
 		LOG_DBG("copy_to_user failed\n");
 		ret = -EFAULT;
 		goto mt_FDVT_read_reg_exit;
@@ -512,10 +548,12 @@ mt_FDVT_read_reg_exit:
 static int MT6573FDVT_WaitIRQ(u32 *u4IRQMask)
 {
 	int timeout;
-	timeout = wait_event_interruptible_timeout(g_MT6573FDVTWQ, (g_u4MT6573FDVTIRQMSK & g_u4MT6573FDVTIRQ), ms_to_jiffies(500));
+	timeout = wait_event_interruptible_timeout(g_MT6573FDVTWQ,
+	(g_u4MT6573FDVTIRQMSK & g_u4MT6573FDVTIRQ), ms_to_jiffies(500));
 
 	if (timeout == 0) {
-		LOG_DBG("wait_event_interruptible_timeout timeout, %d, %d\n", g_u4MT6573FDVTIRQMSK, g_u4MT6573FDVTIRQ);
+		LOG_DBG("wait_event_interruptible_timeout timeout, %d, %d\n",
+		g_u4MT6573FDVTIRQMSK, g_u4MT6573FDVTIRQ);
 		FDVT_WR32(0x00030000, FDVT_START);  /* LDVT Disable */
 		FDVT_WR32(0x00000000, FDVT_START);  /* LDVT Disable */
 		return -EAGAIN;
@@ -523,6 +561,11 @@ static int MT6573FDVT_WaitIRQ(u32 *u4IRQMask)
 
 	*u4IRQMask = g_u4MT6573FDVTIRQ;
 	/* LOG_DBG("[FDVT] IRQ : 0x%8x\n",g_u4MT6573FDVTIRQ); */
+
+	if (timeout != 0 && !(g_u4MT6573FDVTIRQMSK & g_u4MT6573FDVTIRQ)) {
+		LOG_DBG("interrupted by system signal, return value(%d)\n", timeout);
+		return -ERESTARTSYS;
+	}
 
 	if (!(g_u4MT6573FDVTIRQMSK & g_u4MT6573FDVTIRQ)) {
 		LOG_DBG("wait_event_interruptible Not FDVT, %d, %d\n", g_u4MT6573FDVTIRQMSK, g_u4MT6573FDVTIRQ);
@@ -549,6 +592,11 @@ static long FDVT_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
 
+	if (_IOC_SIZE(cmd) > buf_size) {
+		LOG_DBG("Buffer Size Exceeded!\n");
+		return -EFAULT;
+	}
+
 	if (_IOC_NONE != _IOC_DIR(cmd)) {
 		/* IO write */
 		if (_IOC_WRITE & _IOC_DIR(cmd)) {
@@ -558,10 +606,10 @@ static long FDVT_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			}
 		}
 		/* else */
-			/* LOG_DBG(" ioctlnot write command\n"); */
+		/* LOG_DBG(" ioctlnot write command\n"); */
 	}
 	/* else */
-		/* LOG_DBG(" ioctl command = NONE\n"); */
+	/* LOG_DBG(" ioctl command = NONE\n"); */
 
 	switch (cmd) {
 	case MT6573FDVT_INIT_SETPARA_CMD:
@@ -570,10 +618,13 @@ static long FDVT_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	case MT6573FDVTIOC_STARTFD_CMD:
 		/* LOG_DBG("[FDVT] MT6573FDVTIOC_STARTFD_CMD\n"); */
-		FDVT_WR32(0x00000001, FDVT_INT_EN);
-		FDVT_WR32(0x00000000, FDVT_START);
-		FDVT_WR32(0x00000001, FDVT_START);
-		FDVT_WR32(0x00000000, FDVT_START);
+		if (haveConfig) {
+			FDVT_WR32(0x00000001, FDVT_INT_EN);
+			FDVT_WR32(0x00000000, FDVT_START);
+			FDVT_WR32(0x00000001, FDVT_START);
+			FDVT_WR32(0x00000000, FDVT_START);
+			haveConfig = 0;
+		}
 		/* MT6573FDVT_DUMPREG(); */
 		break;
 	case MT6573FDVTIOC_G_WAITIRQ:
@@ -585,11 +636,13 @@ static long FDVT_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		/* LOG_DBG("[FDVT] MT6573FDVT set FD config\n"); */
 		FaceDetecteConfig();  /* LDVT Disable, Due to the different feature number between FD/SD/BD/REC */
 		MT6573FDVT_SetRegHW((MT6573FDVTRegIO *)pBuff);
+		haveConfig = 1;
 		break;
 	case MT6573FDVTIOC_T_SET_SDCONF_CMD:
 		/* LOG_DBG("[FDVT] MT6573FDVT set SD config\n"); */
 		SmileDetecteConfig();
 		MT6573FDVT_SetRegHW((MT6573FDVTRegIO *)pBuff);
+		haveConfig = 1;
 		break;
 	case MT6573FDVTIOC_G_READ_FDREG_CMD:
 		/* LOG_DBG("[FDVT] MT6573FDVT read FD config\n"); */
@@ -622,8 +675,8 @@ static long FDVT_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 ********************************************************************************/
 
 static int compat_FD_get_register_data(
-		compat_MT6573FDVTRegIO __user *data32,
-		MT6573FDVTRegIO __user *data)
+	compat_MT6573FDVTRegIO __user *data32,
+	MT6573FDVTRegIO __user *data)
 {
 	compat_uint_t count;
 	compat_uptr_t uptr_Addr;
@@ -668,16 +721,13 @@ static long compat_FD_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		return -ENOTTY;
 
 	switch (cmd) {
-	case COMPAT_MT6573FDVT_INIT_SETPARA_CMD:
-	{
+	case COMPAT_MT6573FDVT_INIT_SETPARA_CMD: {
 		return file->f_op->unlocked_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
 	}
-	case COMPAT_MT6573FDVTIOC_STARTFD_CMD:
-	{
+	case COMPAT_MT6573FDVTIOC_STARTFD_CMD: {
 		return file->f_op->unlocked_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
 	}
-	case COMPAT_MT6573FDVTIOC_G_WAITIRQ:
-	{
+	case COMPAT_MT6573FDVTIOC_G_WAITIRQ: {
 		compat_MT6573FDVTRegIO __user *data32;
 		MT6573FDVTRegIO __user *data;
 		int err;
@@ -690,12 +740,12 @@ static long compat_FD_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		err = compat_FD_get_register_data(data32, data);
 		if (err)
 			return err;
-			ret = file->f_op->unlocked_ioctl(file, MT6573FDVTIOC_G_WAITIRQ, (unsigned long)data);
+
+		ret = file->f_op->unlocked_ioctl(file, MT6573FDVTIOC_G_WAITIRQ, (unsigned long)data);
 		err = compat_FD_put_register_data(data32, data);
 		return ret ? ret : err;
 	}
-	case COMPAT_MT6573FDVTIOC_T_SET_FDCONF_CMD:
-	{
+	case COMPAT_MT6573FDVTIOC_T_SET_FDCONF_CMD: {
 		compat_MT6573FDVTRegIO __user *data32;
 		MT6573FDVTRegIO __user *data;
 		int err;
@@ -711,8 +761,7 @@ static long compat_FD_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		ret = file->f_op->unlocked_ioctl(file, MT6573FDVTIOC_T_SET_FDCONF_CMD, (unsigned long)data);
 		return ret ? ret : err;
 	}
-	case COMPAT_MT6573FDVTIOC_G_READ_FDREG_CMD:
-	{
+	case COMPAT_MT6573FDVTIOC_G_READ_FDREG_CMD: {
 		compat_MT6573FDVTRegIO __user *data32;
 		MT6573FDVTRegIO __user *data;
 		int err;
@@ -729,8 +778,7 @@ static long compat_FD_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		err = compat_FD_put_register_data(data32, data);
 		return ret ? ret : err;
 	}
-	case COMPAT_MT6573FDVTIOC_T_SET_SDCONF_CMD:
-	{
+	case COMPAT_MT6573FDVTIOC_T_SET_SDCONF_CMD: {
 		compat_MT6573FDVTRegIO __user *data32;
 		MT6573FDVTRegIO __user *data;
 		int err;
@@ -746,8 +794,7 @@ static long compat_FD_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		ret = file->f_op->unlocked_ioctl(file, MT6573FDVTIOC_T_SET_SDCONF_CMD, (unsigned long)data);
 		return ret ? ret : err;
 	}
-	case COMPAT_MT6573FDVTIOC_T_DUMPREG:
-	{
+	case COMPAT_MT6573FDVTIOC_T_DUMPREG: {
 		return file->f_op->unlocked_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
 	}
 	default:
@@ -765,6 +812,16 @@ static int FDVT_open(struct inode *inode, struct file *file)
 	INT32 ret = 0;
 
 	LOG_DBG("[FDVT_DEBUG] FDVT_open\n");
+
+	spin_lock(&g_spinLock);
+	if (g_drvOpened) {
+		spin_unlock(&g_spinLock);
+		LOG_DBG("Opened, return -EBUSY\n");
+		return -EBUSY;
+	}
+	g_drvOpened = 1;
+	spin_unlock(&g_spinLock);
+
 	mt_fdvt_clk_ctrl(1); /* ISP help enable */
 	if (pBuff != NULL)
 		LOG_DBG("pBuff is not null\n");
@@ -772,12 +829,12 @@ static int FDVT_open(struct inode *inode, struct file *file)
 		LOG_DBG("pread_buf is not null\n");
 
 	pBuff = kmalloc(buf_size, GFP_KERNEL);
+	memset(pBuff, 0, buf_size);
 	if (NULL == pBuff) {
 		LOG_DBG(" ioctl allocate mem failed\n");
 		ret = -ENOMEM;
-	} else {
+	} else
 		LOG_DBG(" ioctl allocate mem ok\n");
-	}
 
 	pread_buf = kmalloc(buf_size, GFP_KERNEL);
 	if (pread_buf == NULL) {
@@ -789,12 +846,12 @@ static int FDVT_open(struct inode *inode, struct file *file)
 
 	if (ret < 0) {
 		/*if (pBuff) {*/
-			kfree(pBuff);
-			pBuff = NULL;
+		kfree(pBuff);
+		pBuff = NULL;
 		/*}*/
 		/*if (pread_buf) {*/
-			kfree(pread_buf);
-			pread_buf = NULL;
+		kfree(pread_buf);
+		pread_buf = NULL;
 		/*}*/
 	}
 
@@ -812,12 +869,12 @@ static int FDVT_release(struct inode *inode, struct file *file)
 {
 	LOG_DBG("[FDVT_DEBUG] FDVT_release\n");
 	/*if (pBuff) {*/
-		kfree(pBuff);
-		pBuff = NULL;
+	kfree(pBuff);
+	pBuff = NULL;
 	/*}*/
 	/*if (pread_buf) {*/
-		kfree(pread_buf);
-		pread_buf = NULL;
+	kfree(pread_buf);
+	pread_buf = NULL;
 	/*}*/
 
 	FDVT_WR32(0x00000000, FDVT_INT_EN);  /* BinChang 20120517 Close Interrupt */
@@ -825,6 +882,11 @@ static int FDVT_release(struct inode *inode, struct file *file)
 	g_u4MT6573FDVTIRQ = ioread32((void *)FDVT_INT);
 	mb();
 	mt_fdvt_clk_ctrl(0); /* ISP help disable */
+
+	spin_lock(&g_spinLock);
+	g_drvOpened = 0;
+	spin_unlock(&g_spinLock);
+
 	return 0;
 }
 
@@ -848,6 +910,7 @@ static int FDVT_probe(struct platform_device *dev)
 	struct class_device *class_dev = NULL;
 #ifdef CONFIG_OF
 	struct fdvt_device *fdvt_dev;
+	void *tempFdvt;
 #endif
 	nr_fdvt_devs = 0;
 
@@ -861,17 +924,17 @@ static int FDVT_probe(struct platform_device *dev)
 	}
 
 	new_count = nr_fdvt_devs + 1;
-	fdvt_devs = krealloc(fdvt_devs,	sizeof(struct fdvt_device) * new_count, GFP_KERNEL);
-	if (!fdvt_devs) {
+	tempFdvt = krealloc(fdvt_devs, sizeof(struct fdvt_device) * new_count, GFP_KERNEL);
+	if (!tempFdvt) {
 		dev_err(&dev->dev, "Unable to allocate fdvt_devs\n");
 		return -ENOMEM;
 	}
-
+	fdvt_devs = (struct fdvt_device *)tempFdvt;
 	fdvt_dev = &(fdvt_devs[nr_fdvt_devs]);
 	fdvt_dev->dev = &dev->dev;
 
 	/* iomap registers and irq*/
-	for (i = 0; i < FDVT_BASEADDR_NUM; i++)	{
+	for (i = 0; i < FDVT_BASEADDR_NUM; i++) {
 		fdvt_dev->regs[i] = of_iomap(dev->dev.of_node, i);
 		if (!fdvt_dev->regs[i]) {
 			dev_err(&dev->dev, "Unable to ioremap registers, of_iomap fail, i=%d\n", i);
@@ -913,22 +976,23 @@ static int FDVT_probe(struct platform_device *dev)
 		fdvt_dev->irq[i] = irq_of_parse_and_map(dev->dev.of_node, i);
 		gFDVT_Irq[i] = fdvt_dev->irq[i];
 		if (FDVT_IRQ_IDX == i) {
-			/* IRQF_TRIGGER_NONE dose not take effect here, real trigger mode set in dts file */
-			ret = request_irq(fdvt_dev->irq[i], (irq_handler_t)MT6573FDVT_irq, IRQF_TRIGGER_NONE, FDVT_DEVNAME,  NULL);
-			/* request_irq(FD_IRQ_BIT_ID, (irq_handler_t)MT6573FDVT_irq, IRQF_TRIGGER_LOW, FDVT_DEVNAME, NULL) */
+			/* IRQF_TRIGGER_NONE dose not take effect here,
+			real trigger mode set in dts file */
+			ret = request_irq(fdvt_dev->irq[i], (irq_handler_t)MT6573FDVT_irq,
+			IRQF_TRIGGER_NONE, FDVT_DEVNAME,  NULL);
+			/* request_irq(FD_IRQ_BIT_ID, (irq_handler_t)MT6573FDVT_irq, IRQF_TRIGGER_LOW,
+			FDVT_DEVNAME, NULL) */
 		}
 		if (ret) {
-			dev_err(&dev->dev, "Unable to request IRQ, request_irq fail, i=%d, irq=%d\n", i, fdvt_dev->irq[i]);
+			dev_err(&dev->dev, "Unable to request IRQ, request_irq fail, i=%d, irq=%d\n",
+			i, fdvt_dev->irq[i]);
 			return ret;
 		}
 		LOG_INF("DT, i=%d, map_irq=%d\n", i, fdvt_dev->irq[i]);
 	}
 
 	nr_fdvt_devs = new_count;
-	if (dev == NULL) {
-		dev_err(&dev->dev, "dev is NULL");
-		return -ENXIO;
-	}
+
 #endif
 
 	ret = alloc_chrdev_region(&FDVT_devno, 0, 1, FDVT_DEVNAME);
@@ -954,7 +1018,8 @@ static int FDVT_probe(struct platform_device *dev)
 
 	/* if (request_irq(MT6573_FDVT_IRQ_LINE, (irq_handler_t)MT6573FDVT_irq, 0, FDVT_DEVNAME, NULL) < 0) */
 	/* if (request_irq(MT_SMI_LARB1_VAMAU_IRQ_ID, (irq_handler_t)MT6573FDVT_irq, 0, FDVT_DEVNAME, NULL) < 0) */
-	if (request_irq(FD_IRQ_BIT_ID, (irq_handler_t)MT6573FDVT_irq, IRQF_TRIGGER_LOW, FDVT_DEVNAME, NULL) < 0)
+	if (request_irq(FD_IRQ_BIT_ID, (irq_handler_t)MT6573FDVT_irq, IRQF_TRIGGER_LOW,
+		FDVT_DEVNAME, NULL) < 0) {
 		LOG_DBG("[FDVT_DEBUG][ERROR] error to request FDVT irq\n");
 	else
 		LOG_DBG("[FDVT_DEBUG] success to request FDVT irq\n");
@@ -1002,12 +1067,12 @@ static int FDVT_remove(struct platform_device *dev)
 	free_irq(i4IRQ , NULL);
 
 	/*if (pBuff) {*/
-		kfree(pBuff);
-		pBuff = NULL;
+	kfree(pBuff);
+	pBuff = NULL;
 	/*}*/
 	/*if (pread_buf) {*/
-		kfree(pread_buf);
-		pread_buf = NULL;
+	kfree(pread_buf);
+	pread_buf = NULL;
 	/*}*/
 
 
@@ -1075,6 +1140,27 @@ static struct platform_device FDVT_device = {
 };
 */
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void FDVT_early_suspend(struct early_suspend *h)
+{
+	/* LOG_DBG("[FDVT_DEBUG] FDVT_suspend\n"); */
+	/* mt_fdvt_clk_ctrl(0); */
+
+}
+
+static void FDVT_early_resume(struct early_suspend *h)
+{
+	/* LOG_DBG("[FDVT_DEBUG] FDVT_suspend\n"); */
+	/* mt_fdvt_clk_ctrl(1); */
+}
+
+static struct early_suspend FDVT_early_suspend_desc = {
+	.level          = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1,
+	.suspend        = FDVT_early_suspend,
+	.resume         = FDVT_early_resume,
+};
+#endif
+
 static int __init FDVT_driver_init(void)
 {
 	int ret;
@@ -1095,6 +1181,10 @@ static int __init FDVT_driver_init(void)
 		ret = -ENODEV;
 		return ret;
 	}
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	register_early_suspend(&FDVT_early_suspend_desc);
+#endif
+
 	LOG_DBG("[FDVT_DEBUG] FDVT_driver_init Done\n");
 
 	return 0;

@@ -1,11 +1,24 @@
 #
+# Copyright (C) 2015 MediaTek Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+
+#
 # Makefile for misc devices that really don't fit anywhere else.
 #
-#include $(srctree)/drivers/misc/mediatek/Makefile.custom
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/m4u/$(MTK_PLATFORM)/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v2/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v2/$(MTK_PLATFORM)/
+ccflags-y += $(call cc-option,-Wno-error=maybe-uninitialized)
 
 ifneq ($(CONFIG_ARM64), y)
 # For arm32
@@ -33,4 +46,4 @@ else
   endif
 endif
 
-$(info cameraisp drv by platform $(platform_drv))
+# $(info cameraisp drv by platform $(platform_drv))
