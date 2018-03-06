@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include "cmdq_driver.h"
 #include "cmdq_struct.h"
 #include "cmdq_core.h"
@@ -24,7 +37,7 @@
 #include <linux/pm.h>
 #include <linux/suspend.h>
 #ifdef CMDQ_USE_LEGACY
-#include <mach/mt_boot.h>
+#include <mt-plat/mt_boot.h>
 #endif
 #ifndef CMDQ_OF_SUPPORT
 #include <mach/mt_irq.h>	/* mt_irq.h is not available on device tree enabled platforms */
@@ -39,13 +52,11 @@
 **/
 static const struct of_device_id cmdq_of_ids[] = {
 	{.compatible = "mediatek,gce",},
+	{.compatible = "mediatek,mt8173-gce",},
+	{.compatible = "mediatek,mt8163-gce",},
 	{}
 };
 #endif
-
-#define CMDQ_MAX_DUMP_REG_COUNT (2048)
-#define CMDQ_MAX_COMMAND_SIZE		(0x10000)
-#define CMDQ_MAX_WRITE_ADDR_COUNT	(PAGE_SIZE / sizeof(u32))
 
 static dev_t gCmdqDevNo;
 static struct cdev *gCmdqCDev;
@@ -257,7 +268,7 @@ static void cmdq_driver_process_read_address_request(cmdqReadAddressStruct *req_
 	dma_addr_t pa = 0;
 	int i = 0;
 
-	CMDQ_LOG("[READ_PA] cmdq_driver_process_read_address_request()\n");
+	CMDQ_MSG("[READ_PA] cmdq_driver_process_read_address_request()\n");
 
 	do {
 		if (NULL == req_user ||
@@ -292,7 +303,7 @@ static void cmdq_driver_process_read_address_request(cmdqReadAddressStruct *req_
 		/* actually read these PA write buffers */
 		for (i = 0; i < req_user->count; ++i) {
 			pa = (0xFFFFFFFF & addrs[i]);
-			CMDQ_LOG("[READ_PA] req read dma address 0x%pa\n", &pa);
+			CMDQ_MSG("[READ_PA] req read dma address 0x%pa\n", &pa);
 			values[i] = cmdqCoreReadWriteAddress(pa);
 		}
 
@@ -316,27 +327,40 @@ static void cmdq_driver_process_read_address_request(cmdqReadAddressStruct *req_
 
 static long cmdq_driver_destroy_secure_medadata(cmdqCommandStruct *pCommand)
 {
+#ifdef CMDQ_SECURE_PATH_SUPPORT
 	if (pCommand->secData.addrMetadatas) {
 		kfree(CMDQ_U32_PTR(pCommand->secData.addrMetadatas));
 		pCommand->secData.addrMetadatas = (cmdqU32Ptr_t) (unsigned long)NULL;
 	}
-
+#endif
 	return 0;
 }
 
 static long cmdq_driver_create_secure_medadata(cmdqCommandStruct *pCommand)
 {
+#ifdef CMDQ_SECURE_PATH_SUPPORT
 	void *pAddrMetadatas = NULL;
-	const uint32_t length =
-	    (pCommand->secData.addrMetadataCount) * sizeof(cmdqSecAddrMetadataStruct);
+	uint32_t length;
+
+	if (pCommand->secData.addrMetadataCount >=
+		CMDQ_IWC_MAX_ADDR_LIST_LENGTH) {
+		CMDQ_ERR("Metadata %u reach the max allowed number = %u\n",
+			pCommand->secData.addrMetadataCount,
+			CMDQ_IWC_MAX_ADDR_LIST_LENGTH);
+		return -EOVERFLOW;
+	}
+
+	length = pCommand->secData.addrMetadataCount *
+		sizeof(struct cmdqSecAddrMetadataStruct);
+
 
 	/* verify parameter */
-	if ((false == pCommand->secData.isSecure) && (0 != pCommand->secData.addrMetadataCount)) {
+	if ((false == pCommand->secData.is_secure) && (0 != pCommand->secData.addrMetadataCount)) {
 
 		/* normal path with non-zero secure metadata */
 		CMDQ_ERR
-		    ("[secData]mismatch secData.isSecure(%d) and secData.addrMetadataCount(%d)\n",
-		     pCommand->secData.isSecure, pCommand->secData.addrMetadataCount);
+		    ("[secData]mismatch secData.is_secure(%d) and secData.addrMetadataCount(%d)\n",
+		     pCommand->secData.is_secure, pCommand->secData.addrMetadataCount);
 		return -EFAULT;
 	}
 
@@ -376,7 +400,9 @@ static long cmdq_driver_create_secure_medadata(cmdqCommandStruct *pCommand)
 #if 0
 	cmdq_core_dump_secure_metadata(&(pCommand->secData));
 #endif
-
+#else
+	pCommand->secData.addrMetadatas = 0;
+#endif
 	return 0;
 }
 
@@ -393,6 +419,10 @@ static long cmdq_driver_process_command_request(cmdqCommandStruct *pCommand)
 
 	if (pCommand->regRequest.count > CMDQ_MAX_DUMP_REG_COUNT)
 		return -EINVAL;
+
+	/* avoid copy large string */
+	if (pCommand->userDebugStrLen > CMDQ_MAX_DBG_STR_LEN)
+		pCommand->userDebugStrLen = CMDQ_MAX_DBG_STR_LEN;
 
 	/* allocate secure medatata */
 	status = cmdq_driver_create_secure_medadata(pCommand);
@@ -473,7 +503,7 @@ bool cmdq_driver_support_wait_and_receive_event_in_same_tick(void)
 {
 #ifdef CMDQ_USE_LEGACY
 	const unsigned int code = mt_get_chip_hw_code();
-	CHIP_SW_VER ver = mt_get_chip_sw_ver();
+	enum chip_sw_ver ver = mt_get_chip_sw_ver();
 	bool support = false;
 
 	if (0x6795 == code) {
@@ -495,8 +525,8 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 {
 	struct cmdqCommandStruct command;
 	struct cmdqJobStruct job;
-	int count[CMDQ_MAX_ENGINE_COUNT];
-	struct TaskStruct *pTask;
+	int count[CMDQ_MAX_ENGINE_COUNT] = {0};
+	struct TaskStruct *pTask = NULL;
 	int32_t status;
 	struct cmdqJobResultStruct jobResult;
 	uint32_t *userRegValue = NULL;
@@ -538,12 +568,6 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 			job.command.blockSize > CMDQ_MAX_COMMAND_SIZE)
 			return -EINVAL;
 
-		/* not support secure path for async ioctl yet */
-		if (true == job.command.secData.isSecure) {
-			CMDQ_ERR("not support secure path for CMDQ_IOCTL_ASYNC_JOB_EXEC\n");
-			return -EFAULT;
-		}
-
 		/* backup */
 		userRegCount = job.command.regRequest.count;
 
@@ -555,8 +579,17 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		if (0 != status)
 			return status;
 
+		/* avoid copy large string */
+		if (job.command.userDebugStrLen > CMDQ_MAX_DBG_STR_LEN)
+			job.command.userDebugStrLen = CMDQ_MAX_DBG_STR_LEN;
+
 		/* scenario id fixup */
 		cmdq_core_fix_command_scenario_for_user_space(&job.command);
+
+		/* allocate secure medatata */
+		status = cmdq_driver_create_secure_medadata(&job.command);
+		if (0 != status)
+			return status;
 
 		status = cmdqCoreSubmitTaskAsync(&job.command, NULL, 0, &pTask);
 
@@ -570,6 +603,9 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		/* we don't need regAddress anymore, free it now */
 		kfree(CMDQ_U32_PTR(job.command.regRequest.regAddresses));
 		job.command.regRequest.regAddresses = (cmdqU32Ptr_t) (unsigned long)(NULL);
+
+		/* free secure path metadata */
+		cmdq_driver_destroy_secure_medadata(&job.command);
 
 		if (status >= 0) {
 			job.hJob = (unsigned long)pTask;
@@ -589,11 +625,12 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		}
 
 		/* verify job handle */
-		if (!cmdqIsValidTaskPtr((TaskStruct *) (unsigned long)jobResult.hJob)) {
+		pTask = cmdq_core_get_task_ptr((struct TaskStruct *)
+			(unsigned long)jobResult.hJob);
+		if (!pTask) {
 			CMDQ_ERR("invalid task ptr = 0x%llx\n", jobResult.hJob);
-			return -EFAULT;
+			return -EINVAL;
 		}
-		pTask = (TaskStruct *) (unsigned long)jobResult.hJob;
 
 		if (pTask->regCount > CMDQ_MAX_DUMP_REG_COUNT)
 			return -EINVAL;
@@ -685,18 +722,11 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 			cmdqWriteAddressStruct addrReq;
 			dma_addr_t paStart = 0;
 
-			CMDQ_LOG("CMDQ_IOCTL_ALLOC_WRITE_ADDRESS\n");
+			CMDQ_MSG("CMDQ_IOCTL_ALLOC_WRITE_ADDRESS\n");
 
 			if (copy_from_user(&addrReq, (void *)param, sizeof(addrReq))) {
 				CMDQ_ERR("CMDQ_IOCTL_ALLOC_WRITE_ADDRESS copy_from_user failed\n");
 				return -EFAULT;
-			}
-
-			if (!addrReq.count || addrReq.count > CMDQ_MAX_WRITE_ADDR_COUNT) {
-				CMDQ_ERR(
-					"CMDQ_IOCTL_ALLOC_WRITE_ADDRESS invalid alloc write addr count:%u\n",
-					addrReq.count);
-				return -EINVAL;
 			}
 
 			status = cmdqCoreAllocWriteAddress(addrReq.count, &paStart);
@@ -708,7 +738,7 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 
 
 			addrReq.startPA = (uint32_t) paStart;
-			CMDQ_LOG("CMDQ_IOCTL_ALLOC_WRITE_ADDRESS get 0x%08x\n", addrReq.startPA);
+			CMDQ_MSG("CMDQ_IOCTL_ALLOC_WRITE_ADDRESS get 0x%08x\n", addrReq.startPA);
 
 			if (copy_to_user((void *)param, &addrReq, sizeof(addrReq))) {
 				CMDQ_ERR("CMDQ_IOCTL_ALLOC_WRITE_ADDRESS copy_to_user failed\n");
@@ -721,7 +751,7 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		do {
 			cmdqWriteAddressStruct freeReq;
 
-			CMDQ_LOG("CMDQ_IOCTL_FREE_WRITE_ADDRESS\n");
+			CMDQ_MSG("CMDQ_IOCTL_FREE_WRITE_ADDRESS\n");
 
 			if (copy_from_user(&freeReq, (void *)param, sizeof(freeReq))) {
 				CMDQ_ERR("CMDQ_IOCTL_FREE_WRITE_ADDRESS copy_from_user failed\n");
@@ -739,7 +769,7 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		do {
 			cmdqReadAddressStruct readReq;
 
-			CMDQ_LOG("CMDQ_IOCTL_READ_ADDRESS_VALUE\n");
+			CMDQ_MSG("CMDQ_IOCTL_READ_ADDRESS_VALUE\n");
 
 			if (copy_from_user(&readReq, (void *)param, sizeof(readReq))) {
 				CMDQ_ERR("CMDQ_IOCTL_READ_ADDRESS_VALUE copy_from_user failed\n");
@@ -968,7 +998,7 @@ static int cmdq_probe(struct platform_device *pDevice)
 	/* although secusre CMDQ driver is responsible for handle secure IRQ, */
 	/* MUST registet secure IRQ to GIC in normal world to ensure it will be initialize correctly */
 	/* (that's because t-base does not support GIC init IRQ in secure world...) */
-#ifdef CMDQ_SECURE_PATH_SUPPORT
+#if defined(CMDQ_SECURE_PATH_SUPPORT) && defined(CMDQ_SECURE_PATH_NORMAL_IRQ)
 	status =
 	    request_irq(cmdq_dev_get_irq_secure_id(), cmdq_irq_handler, IRQF_TRIGGER_LOW,
 			CMDQ_DRIVER_DEVICE_NAME, gCmdqCDev);
@@ -979,12 +1009,6 @@ static int cmdq_probe(struct platform_device *pDevice)
 		return -EFAULT;
 	}
 #endif
-
-	/* global ioctl access point (/proc/mtk_cmdq) */
-	if (NULL == proc_create(CMDQ_DRIVER_DEVICE_NAME, 0644, NULL, &cmdqOP)) {
-		CMDQ_ERR("CMDQ procfs node create failed\n");
-		return -EFAULT;
-	}
 
 	/* proc debug access point */
 	cmdq_create_debug_entries();
@@ -1078,6 +1102,14 @@ static int __init cmdq_init(void)
 	cmdqCoreRegisterCB(CMDQ_GROUP_MDP,
 			   cmdq_mdp_get_func()->mdpClockOn, cmdq_mdp_get_func()->mdpDumpInfo,
 			   cmdq_mdp_get_func()->mdpResetEng, cmdq_mdp_get_func()->mdpClockOff);
+
+	/* Register module dispatch callback */
+	cmdqCoreRegisterDispatchModCB(CMDQ_GROUP_MDP,
+			   cmdq_mdp_get_func()->dispatchModule);
+
+	/* Register restore task */
+	cmdqCoreRegisterTrackTaskCB(CMDQ_GROUP_MDP,
+			   cmdq_mdp_get_func()->trackTask);
 
 	/* Register VENC callback */
 	cmdqCoreRegisterCB(CMDQ_GROUP_VENC, NULL, cmdq_mdp_get_func()->vEncDumpInfo, NULL, NULL);

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __CMDQ_SEC_H__
 #define __CMDQ_SEC_H__
 #include <linux/slab.h>
@@ -7,8 +20,8 @@
 #include "cmdq_core.h"
 #include "cmdq_reg.h"
 
-#ifdef CMDQ_SECURE_PATH_SUPPORT
 #include "cmdq_iwc_sec.h"
+#ifdef CMDQ_SECURE_PATH_SUPPORT
 #include "tz_cross/trustzone.h"
 #include "tz_cross/ta_mem.h"
 #include "trustzone/kree/system.h"
@@ -69,8 +82,6 @@ typedef struct cmdqSecSharedMemoryStruct {
 } cmdqSecSharedMemoryStruct, *cmdqSecSharedMemoryHandle;
 #endif
 
-#ifdef CMDQ_SECURE_PATH_SUPPORT
-
 /**
  * Callback to fill message buffer for secure task
  *
@@ -83,6 +94,9 @@ typedef struct cmdqSecSharedMemoryStruct {
 typedef int32_t(*CmdqSecFillIwcCB) (iwcCmdqMessage_t *_pIwc,
 				    uint32_t iwcCommand,
 				    struct TaskStruct *_pTask, int32_t thread);
+
+#ifdef CMDQ_SECURE_PATH_SUPPORT
+
 /**
   * submit task to secure world
   */

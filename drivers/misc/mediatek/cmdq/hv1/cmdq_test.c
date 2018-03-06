@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -38,9 +51,8 @@ static int32_t gCmdqTestConfig[3] = { 0, 0, 0 };	/* {normal, secure},configData,
 static bool gCmdqTestSecure;
 static uint32_t gThreadRunFlag = 1;
 
-#ifdef _CMDQ_TEST_PROC_
+
 static struct proc_dir_entry *gCmdqTestProcEntry;
-#endif
 /*
 	fix coding style
 	the following statements are removed and put in #inlcude"cmdq_test.h"
@@ -1625,11 +1637,12 @@ static void testcase_write(void)
 
 	/* use CMDQ to set to PATTERN */
 	cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &handle);
+	cmdqRecSetSecureMode(handle, CMDQ_DISP_SINGLE_MODE);
 
 	for (count = 0; count < loopCount; count++) {
 		cmdqRecReset(handle);
 		cmdqRecSetSecure(handle, gCmdqTestSecure);
-		cmdqRecWrite(handle, CMDQ_TEST_DISP_PWM0_DUMMY_PA, PATTERN, ~0);
+		cmdqRecWrite(handle, CMDQ_TEST_MMSYS_DUMMY_PA, PATTERN, ~0);
 		cmdqRecFlushAsyncCallback(handle, flush_callback, PATTERN);
 	}
 	cmdqRecDestroy(handle);
@@ -2659,7 +2672,6 @@ static const struct file_operations cmdq_fops = {
 
 static int __init cmdq_test_init(void)
 {
-#ifdef _CMDQ_TEST_PROC_
 	CMDQ_MSG("cmdq_test_init\n");
 
 	/* Mout proc entry for debug */
@@ -2669,19 +2681,17 @@ static int __init cmdq_test_init(void)
 			CMDQ_MSG("cmdq_test_init failed\n");
 
 	}
-#endif
+
 	return 0;
 }
 
 static void __exit cmdq_test_exit(void)
 {
-#ifdef _CMDQ_TEST_PROC_
 	CMDQ_MSG("cmdq_test_exit\n");
 	if (NULL != gCmdqTestProcEntry) {
 		proc_remove(gCmdqTestProcEntry);
 		gCmdqTestProcEntry = NULL;
 	}
-#endif
 }
 module_init(cmdq_test_init);
 module_exit(cmdq_test_exit);

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/uaccess.h>
@@ -28,7 +41,6 @@
 
 #include <linux/kthread.h>
 #include <linux/delay.h>
-#include <linux/rtpm_prio.h>
 
 
 #ifdef CMDQ_SECURE_PATH_SUPPORT
@@ -136,7 +148,7 @@ static int cmdq_core_print_log_kthread(void *data)
 	uint32_t msgOffset;
 	int32_t msgMAXSize;
 	bool needPrintLog;
-	struct sched_param param = {.sched_priority = RTPM_PRIO_SCRN_UPDATE };
+	struct sched_param param = {.sched_priority = 94};
 
 	sched_setscheduler(current, SCHED_RR, &param);
 
@@ -584,9 +596,9 @@ ssize_t cmdqCorePrintStatus(struct device *dev, struct device_attribute *attr, c
 	};
 	static const char *const listNames[] = { "Free", "Active", "Wait" };
 
-	const enum CMDQ_ENG_ENUM engines[] = { CMDQ_FOREACH_STATUS_MODULE_PRINT(GENERATE_ENUM) };
-	static const char *const engineNames[] = {
-	    CMDQ_FOREACH_STATUS_MODULE_PRINT(GENERATE_STRING) };
+	const enum CMDQ_ENG_ENUM engines[] = CMDQ_FOREACH_STATUS_MODULE_PRINT(GENERATE_ENUM);
+	static const char *const engineNames[] =
+	    CMDQ_FOREACH_STATUS_MODULE_PRINT(GENERATE_STRING);
 
 	cmdqCorePrintStatus_idv(pBuffer);
 
@@ -1055,9 +1067,9 @@ int cmdqCorePrintStatusSeq(struct seq_file *m, void *v)
 	};
 	static const char *const listNames[] = { "Free", "Active", "Wait" };
 
-	const enum CMDQ_ENG_ENUM engines[] = { CMDQ_FOREACH_STATUS_MODULE_PRINT(GENERATE_ENUM) };
-	static const char *const engineNames[] = {
-	    CMDQ_FOREACH_STATUS_MODULE_PRINT(GENERATE_STRING) };
+	const enum CMDQ_ENG_ENUM engines[] = CMDQ_FOREACH_STATUS_MODULE_PRINT(GENERATE_ENUM);
+	static const char *const engineNames[] =
+	    CMDQ_FOREACH_STATUS_MODULE_PRINT(GENERATE_STRING);
 
 	cmdqCorePrintStatusSeq_idv(m);
 
@@ -6200,8 +6212,9 @@ int32_t cmdqCoreReleaseTask(struct TaskStruct *pTask)
 			BUG_ON(pThread->taskCount > 1);
 
 			/* suspend and reset the thread */
-			status = cmdq_core_suspend_HW_thread(thread);
-			BUG_ON(status < 0);
+			/* might meet unsuspendable situation, can be ignored due to following reset */
+			/* status = cmdq_core_suspend_HW_thread(thread); */
+			/* BUG_ON(status < 0); */
 			pThread->taskCount = 0;
 			cmdq_core_disable_HW_thread(thread);
 		} else {

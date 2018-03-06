@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/memory.h>
@@ -347,16 +360,18 @@ int32_t cmdqRecSetSecure(cmdqRecHandle handle, const bool isSecure)
 #endif
 }
 
-#ifdef CMDQ_SECURE_PATH_SUPPORT
 int32_t cmdqRecSetSecureMode(cmdqRecHandle handle, enum CMDQ_DISP_MODE mode)
 {
+#ifdef CMDQ_SECURE_PATH_SUPPORT
 	if (NULL == handle)
 		return -EFAULT;
 
 	handle->secData.secMode = mode;
 	return 0;
-}
+#else
+	return -EFAULT;
 #endif
+}
 
 int32_t cmdqRecSecureEnableDAPC(cmdqRecHandle handle, const uint64_t engineFlag)
 {

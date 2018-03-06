@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include "cmdq_mdp_common.h"
 #include "cmdq_core.h"
 #include "cmdq_device.h"
@@ -5,6 +18,9 @@
 #ifdef CMDQ_PROFILE_MMP
 #include "cmdq_mmp.h"
 #endif
+
+static cmdqMDPTaskStruct gCmdqMDPTask[MDP_MAX_TASK_NUM];
+static int gCmdqMDPTaskIndex;
 
 /**************************************************************************************/
 /*******************                    Platform dependent function                    ********************/
@@ -98,7 +114,7 @@ void cmdq_mdp_init_module_clk_virtual(void)
 void cmdq_mdp_dump_rsz_virtual(const unsigned long base, const char *label)
 {
 	uint32_t value[8] = { 0 };
-	uint32_t request[4] = { 0 };
+	uint32_t request[8] = { 0 };
 	uint32_t state = 0;
 
 	value[0] = CMDQ_REG_GET32(base + 0x004);
@@ -129,9 +145,15 @@ void cmdq_mdp_dump_rsz_virtual(const unsigned long base, const char *label)
 	request[1] = (state & (0x1 << 1)) >> 1;	/* out ready */
 	request[2] = (state & (0x1 << 2)) >> 2;	/* in valid */
 	request[3] = (state & (0x1 << 3)) >> 3;	/* in ready */
+	request[4] = (value[1] & 0x1FFF);	/* input_width */
+	request[5] = (value[1] >> 16) & 0x1FFF;	/* input_height */
+	request[6] = (value[2] & 0x1FFF);	/* output_width */
+	request[7] = (value[2] >> 16) & 0x1FFF;	/* output_height */
 
 	CMDQ_ERR("RSZ inRdy,inRsq,outRdy,outRsq: %d,%d,%d,%d (%s)\n",
 		 request[3], request[2], request[1], request[0], cmdq_mdp_get_rsz_state(state));
+	CMDQ_ERR("RSZ input_width,input_height,output_width,output_height: %d,%d,%d,%d\n",
+		 request[4], request[5], request[6], request[7]);
 }
 
 void cmdq_mdp_dump_tdshp_virtual(const unsigned long base, const char *label)
@@ -176,6 +198,12 @@ int32_t cmdqMdpClockOff_virtual(uint64_t engineFlag)
 	return 0;
 }
 
+/* MDP Initialization setting */
+void cmdqMdpInitialSetting_virtual(void)
+{
+	/* Do Nothing */
+}
+
 /* test MDP clock function */
 uint32_t cmdq_mdp_rdma_get_reg_offset_src_addr_virtual(void)
 {
@@ -195,6 +223,62 @@ uint32_t cmdq_mdp_wdma_get_reg_offset_dst_addr_virtual(void)
 void testcase_clkmgr_mdp_virtual(void)
 {
 }
+
+const char *cmdq_mdp_dispatch_virtual(uint64_t engineFlag)
+{
+	return "MDP";
+}
+
+void cmdq_mdp_trackTask_virtual(const struct TaskStruct *pTask)
+{
+	if (pTask) {
+		memcpy(gCmdqMDPTask[gCmdqMDPTaskIndex].callerName,
+			pTask->callerName, sizeof(pTask->callerName));
+		if (pTask->userDebugStr)
+			memcpy(gCmdqMDPTask[gCmdqMDPTaskIndex].userDebugStr,
+				pTask->userDebugStr, (uint32_t)strlen(pTask->userDebugStr) + 1);
+		else
+			gCmdqMDPTask[gCmdqMDPTaskIndex].userDebugStr[0] = '\0';
+	} else {
+		gCmdqMDPTask[gCmdqMDPTaskIndex].callerName[0] = '\0';
+		gCmdqMDPTask[gCmdqMDPTaskIndex].userDebugStr[0] = '\0';
+	}
+
+	CMDQ_MSG("cmdq_mdp_trackTask: caller: %s\n",
+		gCmdqMDPTask[gCmdqMDPTaskIndex].callerName);
+	CMDQ_MSG("cmdq_mdp_trackTask: DebugStr: %s\n",
+		gCmdqMDPTask[gCmdqMDPTaskIndex].userDebugStr);
+	CMDQ_MSG("cmdq_mdp_trackTask: Index: %d\n",
+		gCmdqMDPTaskIndex);
+
+	gCmdqMDPTaskIndex = (gCmdqMDPTaskIndex + 1) % MDP_MAX_TASK_NUM;
+}
+
+#if defined(CMDQ_USE_CCF) && defined(CMDQ_USE_LEGACY)
+void cmdq_mdp_init_module_clk_MUTEX_32K_virtual(void)
+{
+	/* Do Nothing */
+}
+
+void cmdq_mdp_smi_larb_enable_clock_virtual(bool enable)
+{
+	/* Do Nothing */
+}
+#endif
+
+#ifdef CMDQ_OF_SUPPORT
+void cmdq_mdp_get_module_pa_virtual(long *startPA, long *endPA)
+{
+	/* Do Nothing */
+}
+#endif
+
+#ifdef CMDQ_USE_LEGACY
+void cmdq_mdp_enable_clock_mutex32k_virtual(bool enable)
+{
+	/* Do Nothing */
+}
+#endif
 
 /**************************************************************************************/
 /************************                      Common Code                      ************************/
@@ -226,10 +310,28 @@ void cmdq_mdp_virtual_function_setting(void)
 	pFunc->mdpResetEng = cmdqMdpResetEng_virtual;
 	pFunc->mdpClockOff = cmdqMdpClockOff_virtual;
 
+	pFunc->mdpInitialSet = cmdqMdpInitialSetting_virtual;
+
 	pFunc->rdmaGetRegOffsetSrcAddr = cmdq_mdp_rdma_get_reg_offset_src_addr_virtual;
 	pFunc->wrotGetRegOffsetDstAddr = cmdq_mdp_wrot_get_reg_offset_dst_addr_virtual;
 	pFunc->wdmaGetRegOffsetDstAddr = cmdq_mdp_wdma_get_reg_offset_dst_addr_virtual;
 	pFunc->testcaseClkmgrMdp = testcase_clkmgr_mdp_virtual;
+
+	pFunc->dispatchModule = cmdq_mdp_dispatch_virtual;
+
+	pFunc->trackTask = cmdq_mdp_trackTask_virtual;
+
+#if defined(CMDQ_USE_CCF) && defined(CMDQ_USE_LEGACY)
+	pFunc->mdpInitModuleClkMutex32K = cmdq_mdp_init_module_clk_MUTEX_32K_virtual;
+
+	pFunc->mdpSmiLarbEnableClock = cmdq_mdp_smi_larb_enable_clock_virtual;
+#endif
+#ifdef CMDQ_OF_SUPPORT
+	pFunc->mdpGetModulePa = cmdq_mdp_get_module_pa_virtual;
+#endif
+#ifdef CMDQ_USE_LEGACY
+	pFunc->mdpEnableClockMutex32k = cmdq_mdp_enable_clock_mutex32k_virtual;
+#endif
 }
 
 cmdqMDPFuncStruct *cmdq_mdp_get_func(void)
@@ -351,8 +453,8 @@ void cmdq_mdp_loop_off(CMDQ_ENG_ENUM engine,
 		/* retrun failed if loop failed */
 		if ((0 > resetStatus) || (0 > initStatus)) {
 			CMDQ_AEE("MDP",
-				 "Disable %ld engine failed, resetStatus:%d, initStatus:%d\n",
-				 resetReg, resetStatus, initStatus);
+				 "Disable %d engine failed, resetStatus:%d, initStatus:%d\n",
+				 engine, resetStatus, initStatus);
 			return;
 		}
 
@@ -363,6 +465,12 @@ void cmdq_mdp_loop_off(CMDQ_ENG_ENUM engine,
 
 void cmdq_mdp_dump_venc(const unsigned long base, const char *label)
 {
+	if (0L == base) {
+		/* print error message */
+		CMDQ_ERR("venc base VA [0x%lx] is not correct\n", base);
+		return;
+	}
+
 	CMDQ_ERR("======== cmdq_mdp_dump_venc + ========\n");
 	CMDQ_ERR("[0x%lx] to [0x%lx]\n", base, base + 0x1000 * 4);
 
@@ -701,4 +809,87 @@ void cmdq_mdp_dump_wdma(const unsigned long base, const char *label)
 	CMDQ_ERR("WDMA grep:%d, FIFO full:%d\n", grep, isFIFOFull);
 	CMDQ_ERR("WDMA suggest: Need SMI help:%d, Need check WDMA config:%d\n", (grep),
 		 ((0 == grep) && (1 == isFIFOFull)));
+}
+
+void cmdq_mdp_check_TF_address(unsigned int mva, char *module)
+{
+	bool findTFTask = false;
+	char *searchStr = NULL;
+	char bufInfoKey[] = "x";
+	char str2int[MDP_BUF_INFO_STR_LEN + 1] = "";
+	char *callerNameEnd = NULL;
+	char *callerNameStart = NULL;
+	int callerNameLen = TASK_COMM_LEN;
+	int taskIndex = 0;
+	int bufInfoIndex = 0;
+	int tfTaskIndex = -1;
+	int planeIndex = 0;
+	unsigned int bufInfo[MDP_PORT_BUF_INFO_NUM] = {0};
+	unsigned int bufAddrStart = 0;
+	unsigned int bufAddrEnd = 0;
+
+	/* search track task */
+	for (taskIndex = 0; taskIndex < MDP_MAX_TASK_NUM; taskIndex++) {
+		searchStr = strpbrk(gCmdqMDPTask[taskIndex].userDebugStr, bufInfoKey);
+		bufInfoIndex = 0;
+
+		/* catch buffer info in string and transform to integer */
+		/* bufInfo format: */
+		/* [address1, address2, address3, size1, size2, size3] */
+		while (searchStr != NULL && findTFTask != true) {
+			strncpy(str2int, searchStr + 1, MDP_BUF_INFO_STR_LEN);
+			if (kstrtoint(str2int, 16, &bufInfo[bufInfoIndex]) != 0) {
+				CMDQ_ERR("[MDP] buf info transform to integer failed\n");
+				CMDQ_ERR("[MDP] fail string: %s\n", str2int);
+			}
+
+			searchStr = strpbrk(searchStr + MDP_BUF_INFO_STR_LEN + 1, bufInfoKey);
+			bufInfoIndex++;
+
+			/* check TF mva in this port or not */
+			if (bufInfoIndex == MDP_PORT_BUF_INFO_NUM) {
+				for (planeIndex = 0; planeIndex < MDP_MAX_PLANE_NUM; planeIndex++) {
+					bufAddrStart = bufInfo[planeIndex];
+					bufAddrEnd = bufAddrStart + bufInfo[planeIndex + MDP_MAX_PLANE_NUM];
+					if (mva >= bufAddrStart && mva < bufAddrEnd) {
+						findTFTask = true;
+						break;
+					}
+				}
+				bufInfoIndex = 0;
+			}
+		}
+
+		/* find TF task and keep task index */
+		if (findTFTask == true) {
+			tfTaskIndex = taskIndex;
+			break;
+		}
+	}
+
+	/* find TF task caller and return dispatch key */
+	if (findTFTask == true) {
+		CMDQ_ERR("[MDP] TF caller: %s\n", gCmdqMDPTask[tfTaskIndex].callerName);
+		CMDQ_ERR("%s\n", gCmdqMDPTask[tfTaskIndex].userDebugStr);
+		strncat(module, "_", 1);
+
+		/* catch caller name only before - or _ */
+		callerNameStart = gCmdqMDPTask[tfTaskIndex].callerName;
+		callerNameEnd = strchr(gCmdqMDPTask[tfTaskIndex].callerName, '-');
+		if (callerNameEnd != NULL)
+			callerNameLen = callerNameEnd - callerNameStart;
+		else {
+			callerNameEnd = strchr(gCmdqMDPTask[tfTaskIndex].callerName, '_');
+			if (callerNameEnd != NULL)
+				callerNameLen = callerNameEnd - callerNameStart;
+		}
+		strncat(module, gCmdqMDPTask[tfTaskIndex].callerName, callerNameLen);
+	} else {
+		CMDQ_ERR("[MDP] TF Task not found\n");
+		for (taskIndex = 0; taskIndex < MDP_MAX_TASK_NUM; taskIndex++) {
+			CMDQ_ERR("[MDP] Task%d:\n", taskIndex);
+			CMDQ_ERR("[MDP] Caller: %s\n", gCmdqMDPTask[taskIndex].callerName);
+			CMDQ_ERR("%s\n", gCmdqMDPTask[taskIndex].userDebugStr);
+		}
+	}
 }

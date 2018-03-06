@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include "cmdq_core.h"
 #include "cmdq_reg.h"
 #include "cmdq_mdp_common.h"
@@ -7,6 +20,8 @@
 #ifndef CMDQ_USE_CCF
 #include <mach/mt_clkmgr.h>
 #endif				/* !defined(CMDQ_USE_CCF) */
+#include "m4u.h"
+#include <linux/slab.h>
 
 #include "cmdq_device.h"
 
@@ -159,6 +174,40 @@ int32_t cmdq_mdp_reset_with_mmsys(const uint64_t engineToResetAgain)
 	}
 
 	return 0;
+}
+
+m4u_callback_ret_t cmdq_M4U_TranslationFault_callback(int port, unsigned	int	mva, void *data)
+{
+	char dispatchModel[MDP_DISPATCH_KEY_STR_LEN] = "MDP";
+
+	CMDQ_ERR("================= [MDP M4U] Dump Begin ================\n");
+	CMDQ_ERR("[MDP M4U]fault call port=%d, mva=0x%x", port, mva);
+
+	cmdq_core_dump_tasks_info();
+
+	switch (port) {
+	case M4U_PORT_MDP_RDMA:
+		cmdq_mdp_dump_rdma(MDP_RDMA_BASE, "RDMA");
+		break;
+	case M4U_PORT_MDP_WDMA:
+		cmdq_mdp_dump_wdma(MDP_WDMA_BASE, "WDMA");
+		break;
+	case M4U_PORT_MDP_WROT:
+		cmdq_mdp_dump_rot(MDP_WROT_BASE, "WROT");
+		break;
+	default:
+		CMDQ_ERR("[MDP M4U]fault callback function");
+		break;
+	}
+
+	CMDQ_ERR("=============== [MDP] Frame Information Begin ====================================\n");
+	/* find dispatch module and assign dispatch key */
+	cmdq_mdp_check_TF_address(mva, dispatchModel);
+	memcpy(data, dispatchModel, sizeof(dispatchModel));
+	CMDQ_ERR("=============== [MDP] Frame Information End ====================================\n");
+	CMDQ_ERR("================= [MDP M4U] Dump End ================\n");
+
+	return M4U_CALLBACK_HANDLED;
 }
 
 int32_t cmdqVEncDumpInfo(uint64_t engineFlag, int logLevel)
@@ -560,6 +609,16 @@ int32_t cmdqMdpClockOff(uint64_t engineFlag)
 	return 0;
 }
 
+void cmdqMdpInitialSetting(void)
+{
+	char *data = kzalloc(MDP_DISPATCH_KEY_STR_LEN, GFP_KERNEL);
+
+	/* Register M4U Translation Fault function */
+	m4u_register_fault_callback(M4U_PORT_MDP_RDMA, cmdq_M4U_TranslationFault_callback, (void *)data);
+	m4u_register_fault_callback(M4U_PORT_MDP_WDMA, cmdq_M4U_TranslationFault_callback, (void *)data);
+	m4u_register_fault_callback(M4U_PORT_MDP_WROT, cmdq_M4U_TranslationFault_callback, (void *)data);
+}
+
 uint32_t cmdq_mdp_rdma_get_reg_offset_src_addr(void)
 {
 	return 0xF00;
@@ -615,6 +674,60 @@ void testcase_clkmgr_mdp(void)
 #endif				/* !defined(CMDQ_USE_CCF) */
 }
 
+const char *cmdq_mdp_dispatch(uint64_t engineFlag)
+{
+	uint32_t state[2] = { 0 };
+	struct TaskStruct task = {};
+	const uint32_t debug_str_len = 1024;
+	int32_t status = 0;
+	const char *module = "MDP";
+
+	task.userDebugStr = kzalloc(debug_str_len, GFP_ATOMIC);
+	if (!task.userDebugStr) {
+		CMDQ_ERR("fail to alloc debug buffer\n");
+		return module;
+	}
+
+	status = cmdq_core_get_running_task_by_engine_unlock(engineFlag,
+		debug_str_len, &task);
+	if (status < 0) {
+		CMDQ_ERR("Failed: get task by engine flag: 0x%016llx, task flag: 0x%016llx\n",
+			engineFlag, task.engineFlag);
+	}
+
+	CMDQ_ERR("MDP frame info: %s\n", task.userDebugStr);
+
+	kfree(task.userDebugStr);
+	task.userDebugStr = NULL;
+
+	if (engineFlag & (1LL << CMDQ_ENG_MDP_RDMA0)) {
+		module = "MDP";
+	} else {
+		if ((engineFlag & (1LL << CMDQ_ENG_MDP_RSZ0))
+			&& (engineFlag & (1LL << CMDQ_ENG_MDP_RSZ1))) {/* 1-in 2-out */
+			CMDQ_REG_SET32(MDP_RSZ0_BASE + 0x040, 0x00000002);
+			state[0] = CMDQ_REG_GET32(MDP_RSZ0_BASE + 0x044) & 0xF;
+			CMDQ_REG_SET32(MDP_RSZ1_BASE + 0x040, 0x00000002);
+			state[1] = CMDQ_REG_GET32(MDP_RSZ1_BASE + 0x044) & 0xF;
+			if ((state[0] == 0xa) && (state[1] == 0xa))
+				module = "ISP (caused mdp upstream hang)";	/* 1,0,1,0 */
+		} else {/* 1-in 1-out */
+			if (engineFlag & (1LL << CMDQ_ENG_MDP_RSZ0)) {
+				CMDQ_REG_SET32(MDP_RSZ0_BASE + 0x040, 0x00000002);
+				state[0] = CMDQ_REG_GET32(MDP_RSZ0_BASE + 0x044) & 0xF;
+			}
+			if (engineFlag & (1LL << CMDQ_ENG_MDP_RSZ1)) {
+				CMDQ_REG_SET32(MDP_RSZ1_BASE + 0x040, 0x00000002);
+				state[1] = CMDQ_REG_GET32(MDP_RSZ1_BASE + 0x044) & 0xF;
+			}
+			if ((state[0] == 0xa) || (state[1] == 0xa))
+				module = "ISP (caused mdp upstream hang)";	/* 1,0,1,0 */
+		}
+	}
+
+	return module;
+}
+
 void cmdq_mdp_platform_function_setting(void)
 {
 	cmdqMDPFuncStruct *pFunc;
@@ -635,8 +748,13 @@ void cmdq_mdp_platform_function_setting(void)
 	pFunc->mdpResetEng = cmdqMdpResetEng;
 	pFunc->mdpClockOff = cmdqMdpClockOff;
 
+	pFunc->mdpInitialSet = cmdqMdpInitialSetting;
+
 	pFunc->rdmaGetRegOffsetSrcAddr = cmdq_mdp_rdma_get_reg_offset_src_addr;
 	pFunc->wrotGetRegOffsetDstAddr = cmdq_mdp_wrot_get_reg_offset_dst_addr;
 	pFunc->wdmaGetRegOffsetDstAddr = cmdq_mdp_wdma_get_reg_offset_dst_addr;
 	pFunc->testcaseClkmgrMdp = testcase_clkmgr_mdp;
+
+	pFunc->dispatchModule = cmdq_mdp_dispatch;
+
 }

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __CMDQ_DEF_H__
 #define __CMDQ_DEF_H__
 #ifdef CONFIG_OF
@@ -207,6 +220,8 @@ typedef enum CMDQ_SEC_ADDR_METADATA_TYPE {
 	CMDQ_SAM_H_2_MVA = 1,	/* sec handle to sec MVA */
 	CMDQ_SAM_NMVA_2_MVA = 2,	/* map normal MVA to secure world */
 	CMDQ_SAM_DDP_REG_HDCP = 3,	/* DDP register needs to set opposite value when HDCP fail */
+	CMDQ_SAM_MEMSET_BUFFER = 4,	/*memset this specify buffer*/
+	CMDQ_SAM_NMVA2_MVA_REVERSE = 5, /* reverse map normal MVA to secure world */
 } CMDQ_SEC_ADDR_METADATA_TYPE;
 
 typedef struct cmdqSecAddrMetadataStruct {

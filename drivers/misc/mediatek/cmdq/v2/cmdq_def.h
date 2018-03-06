@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __CMDQ_DEF_H__
 #define __CMDQ_DEF_H__
 
@@ -42,9 +55,8 @@
 #endif
 
 #define CMDQ_INITIAL_CMD_BLOCK_SIZE     (PAGE_SIZE)
-#define CMDQ_EMERGENCY_BLOCK_SIZE       (256 * 1024)	/* 256 KB command buffer */
-#define CMDQ_EMERGENCY_BLOCK_COUNT      (4)
 #define CMDQ_INST_SIZE                  (2 * sizeof(uint32_t))	/* instruction is 64-bit */
+#define CMDQ_CMD_BUFFER_SIZE			(PAGE_SIZE)
 
 #define CMDQ_MAX_LOOP_COUNT             (1000000)
 #define CMDQ_MAX_INST_CYCLE             (27)
@@ -54,10 +66,10 @@
 #define CMDQ_MAX_TASK_IN_SECURE_THREAD	(10)
 
 /* max value of CMDQ_THR_EXEC_CMD_CNT (value starts from 0) */
-#ifdef CMDQ_USE_LEGACY
-#define CMDQ_MAX_COOKIE_VALUE           (0xFFFF)
-#else
+#ifdef CMDQ_USE_LARGE_MAX_COOKIE
 #define CMDQ_MAX_COOKIE_VALUE           (0xFFFFFFFF)
+#else
+#define CMDQ_MAX_COOKIE_VALUE           (0xFFFF)
 #endif
 #define CMDQ_ARG_A_SUBSYS_MASK          (0x001F0000)
 
@@ -170,7 +182,7 @@ typedef enum CMDQ_SCENARIO_ENUM {
 	CMDQ_SCENARIO_RDMA2_DISP = 34,
 
 	CMDQ_SCENARIO_HIGHP_TRIGGER_LOOP = 35,	/* for primary trigger loop enable pre-fetch usage */
-	CMDQ_SCENARIO_LOWP_TRIGGER_LOOP = 36,	/* for low priority monitor loop to polling bus status*/
+	CMDQ_SCENARIO_LOWP_TRIGGER_LOOP = 36,	/* for low priority monitor loop to polling bus status */
 
 	CMDQ_SCENARIO_KERNEL_CONFIG_GENERAL = 37,
 
@@ -292,21 +304,47 @@ typedef enum CMDQ_SEC_ADDR_METADATA_TYPE {
 	CMDQ_SAM_H_2_PA = 0,	/* sec handle to sec PA */
 	CMDQ_SAM_H_2_MVA = 1,	/* sec handle to sec MVA */
 	CMDQ_SAM_NMVA_2_MVA = 2,	/* map normal MVA to secure world */
+	CMDQ_SAM_DDP_REG_HDCP = 3,	/* DDP register needs to set opposite value when HDCP fail */
+	CMDQ_SAM_NMVA2_MVA_REVERSE = 4, /* reverse map normal MVA to secure world */
 } CMDQ_SEC_ADDR_METADATA_TYPE;
 
 typedef struct cmdqSecAddrMetadataStruct {
-	/* [IN]_d, index of instruction. Update its argB value to real PA/MVA in secure world */
+	/* [IN]_d, index of instruction. Update its arg_b value to real PA/MVA in secure world */
 	uint32_t instrIndex;
 
-	CMDQ_SEC_ADDR_METADATA_TYPE type;	/* [IN] addr handle type */
-	uint32_t baseHandle;	/* [IN]_h, secure address handle */
+	/*
+	 * Note: Buffer and offset
+	 *
+	 *   -------------
+	 *   |     |     |
+	 *   -------------
+	 *   ^     ^  ^  ^
+	 *   A     B  C  D
+	 *
+	 *	A: baseHandle
+	 *	B: baseHandle + blockOffset
+	 *  C: baseHandle + blockOffset + offset
+	 *	A~B or B~D: size
+	 */
+
+	uint32_t type;		/* [IN] addr handle type */
+	uint64_t baseHandle;	/* [IN]_h, secure address handle */
+	uint32_t blockOffset;	/* [IN]_b, block offset from handle(PA) to current block(plane) */
 	uint32_t offset;	/* [IN]_b, buffser offset to secure handle */
 	uint32_t size;		/* buffer size */
 	uint32_t port;		/* hw port id (i.e. M4U port id) */
 } cmdqSecAddrMetadataStruct;
 
+/* tablet use */
+enum CMDQ_DISP_MODE {
+	CMDQ_DISP_NON_SUPPORTED_MODE = 0,
+	CMDQ_DISP_SINGLE_MODE = 1,
+	CMDQ_DISP_VIDEO_MODE = 2,
+	CMDQ_MDP_USER_MODE = 3,
+};
+
 typedef struct cmdqSecDataStruct {
-	bool isSecure;		/* [IN]true for secure command */
+	bool is_secure;		/* [IN]true for secure command */
 
 	/* address metadata, used to translate secure buffer PA related instruction in secure world */
 	uint32_t addrMetadataCount;	/* [IN] count of element in addrList */
@@ -319,6 +357,15 @@ typedef struct cmdqSecDataStruct {
 	/* [Reserved] This is for CMDQ driver usage itself. Not for client. */
 	int32_t waitCookie;	/* task index in thread's tasklist. -1 for not in tasklist. */
 	bool resetExecCnt;	/* reset HW thread in SWd */
+
+#ifdef CONFIG_MTK_CMDQ_TAB
+	/* tablet use */
+	enum CMDQ_DISP_MODE secMode;
+	/* for MDP to copy HDCP version from srcHandle to dstHandle */
+	/* will remove later */
+	uint32_t srcHandle;
+	uint32_t dstHandle;
+#endif
 } cmdqSecDataStruct;
 
 #ifdef CMDQ_PROFILE_MARKER_SUPPORT
@@ -347,7 +394,7 @@ typedef struct cmdqCommandStruct {
 	cmdqRegValueStruct regValue;
 	/* [IN/OUT] physical addresses to read value */
 	cmdqReadAddressStruct readAddress;
-	/*[IN] secure execution data */
+	/* [IN] secure execution data */
 	cmdqSecDataStruct secData;
 	/* [IN] set to non-zero to enable register debug dump. */
 	uint32_t debugRegDump;
@@ -356,6 +403,8 @@ typedef struct cmdqCommandStruct {
 #ifdef CMDQ_PROFILE_MARKER_SUPPORT
 	cmdqProfileMarkerStruct profileMarker;
 #endif
+	cmdqU32Ptr_t userDebugStr;
+	uint32_t userDebugStrLen;
 } cmdqCommandStruct;
 
 typedef enum CMDQ_CAP_BITS {

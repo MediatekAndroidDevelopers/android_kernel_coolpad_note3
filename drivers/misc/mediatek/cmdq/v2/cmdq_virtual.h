@@ -1,9 +1,22 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __CMDQ_CORE_VIRTUAL_H__
 #define __CMDQ_CORE_VIRTUAL_H__
 
 #include "cmdq_def.h"
 
-/* get subsys LSB in argA */
+/* get subsys LSB in arg_a */
 typedef uint32_t(*CmdqGetSubsysLSBArgA) (void);
 
 /* is a secure thread */
@@ -31,10 +44,10 @@ typedef int (*CmdqGetThreadID) (CMDQ_SCENARIO_ENUM scenario, const bool secure);
 typedef CMDQ_HW_THREAD_PRIORITY_ENUM(*CmdqPriority) (CMDQ_SCENARIO_ENUM scenario);
 
 /*  force loop IRQ from scenario */
-typedef bool(*CmdqForceLoopIRQ) (CMDQ_SCENARIO_ENUM scenario);
+typedef bool(*cmdq_force_loop_irq) (CMDQ_SCENARIO_ENUM scenario);
 
-/*  is loop scenario */
-typedef bool(*CmdqIsLoopScenario) (CMDQ_SCENARIO_ENUM scenario, bool displayOnly);
+/*  is disp loop */
+typedef bool(*cmdq_is_disp_loop) (CMDQ_SCENARIO_ENUM scenario);
 
 /* get register index from hwflag */
 typedef void(*CmdqGetRegID) (uint64_t hwflag,
@@ -42,7 +55,8 @@ typedef void(*CmdqGetRegID) (uint64_t hwflag,
 			     CMDQ_DATA_REGISTER_ENUM *destRegId, CMDQ_EVENT_ENUM *regAccessToken);
 
 /*  module from event index */
-typedef const char *(*CmdqModuleFromEvent) (const int32_t event);
+typedef const char *(*CmdqModuleFromEvent) (const int32_t event,
+	struct CmdqCBkStruct *groupCallback, uint64_t engineFlag);
 
 /* parse module from register addr */
 typedef const char *(*CmdqParseModule) (uint32_t reg_addr);
@@ -80,9 +94,6 @@ typedef void (*CmdqDumpGPR) (void);
 /* flag from scenario */
 typedef uint64_t(*CmdqFlagFromScenario) (CMDQ_SCENARIO_ENUM scenario);
 
-/* initial backup evet setting */
-typedef void (*CmdqInitialBackupEvent) (void);
-
 /* evet backup */
 typedef void (*CmdqEventBackup) (void);
 
@@ -108,8 +119,8 @@ typedef struct cmdqCoreFuncStruct {
 	CmdqDispThread dispThread;
 	CmdqGetThreadID getThreadID;
 	CmdqPriority priority;
-	CmdqForceLoopIRQ forceLoopIRQ;
-	CmdqIsLoopScenario isLoopScenario;
+	cmdq_force_loop_irq force_loop_irq;
+	cmdq_is_disp_loop is_disp_loop;
 	CmdqGetRegID getRegID;
 	CmdqModuleFromEvent moduleFromEvent;
 	CmdqParseModule parseModule;
@@ -124,7 +135,6 @@ typedef struct cmdqCoreFuncStruct {
 	CmdqDumpSMI dumpSMI;
 	CmdqDumpGPR dumpGPR;
 	CmdqFlagFromScenario flagFromScenario;
-	CmdqInitialBackupEvent initialBackupEvent;
 	CmdqEventBackup eventBackup;
 	CmdqEventRestore eventRestore;
 	CmdqTestSetup testSetup;

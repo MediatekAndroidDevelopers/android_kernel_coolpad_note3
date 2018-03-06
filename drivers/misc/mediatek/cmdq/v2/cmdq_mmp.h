@@ -1,7 +1,20 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __CMDQ_MMP_H__
 #define __CMDQ_MMP_H__
 
-#include <linux/mmprofile.h>
+#include "mmprofile.h"
 #include "cmdq_core.h"
 
 typedef struct {
@@ -25,4 +38,6 @@ typedef struct {
 void cmdq_mmp_init(void);
 CMDQ_MMP_Events_t *cmdq_mmp_get_event(void);
 
+extern void MMProfileEnable(int enable);
+extern void MMProfileStart(int start);
 #endif				/* __CMDQ_MMP_H__ */

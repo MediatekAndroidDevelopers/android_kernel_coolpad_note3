@@ -1,8 +1,18 @@
-# include $(srctree)/drivers/misc/mediatek/Makefile.custom
+#
+# Copyright (C) 2015 MediaTek Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
 
 # drivers/cmdq
-$(warning start to build cmdq normal)
-
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/dispsys
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/hv1/$(MTK_PLATFORM)
 ccflags-y += -I$(srctree)/include/linux
@@ -11,12 +21,13 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/hv1
 
 ifeq ($(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT),y)
-$(warning start to build cmdq secure)
 	ccflags-y += -I$(srctree)/include
 	ccflags-y += -I$(srctree)/include/trustzone
 
 #	ccflags-y += -DMTK_SEC_VIDEO_PATH_SUPPORT
+
 	ccflags-y += -DCMDQ_SECURE_PATH_SUPPORT
+
 	ccflags-y += -DDEBUG_SVP_INFO
 	obj-y += cmdq_sec.o
 else
@@ -27,12 +38,6 @@ ifeq ($(CONFIG_MTK_IN_HOUSE_TEE_SUPPORT),yes)
 endif
 #ccflags-y += -DMTK_SEC_VIDEO_PATH_SUPPORT	#need to modify jiaguang.zhang
 #ccflags-y += -DCONFIG_MTK_IN_HOUSE_TEE_SUPPORT
-
-
-ifneq ($(TARGET_BUILD_VARIANT),user)
-ccflags-y += -D_CMDQ_TEST_PROC_
-endif
-
 # Enable MET
 ccflags-y += -DMET_USER_EVENT_SUPPORT
 ccflags-y += -DDEBUG_INFO

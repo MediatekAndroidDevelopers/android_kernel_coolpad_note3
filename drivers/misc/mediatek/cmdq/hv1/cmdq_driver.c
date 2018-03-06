@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include "cmdq_driver.h"
 #include "cmdq_struct.h"
 #include "cmdq_core.h"
@@ -50,6 +63,8 @@ static const struct of_device_id cmdq_of_ids[] = {
 	{}
 };
 #endif
+
+#define CMDQ_MAX_DUMP_REG_COUNT (2048)
 
 static dev_t gCmdqDevNo;
 static struct cdev *gCmdqCDev;
@@ -214,6 +229,8 @@ static int cmdq_driver_create_reg_address_buffer(struct cmdqCommandStruct *pComm
 		}
 	}
 	/* how many register to dump? */
+	if (kernelRegCount > CMDQ_MAX_DUMP_REG_COUNT || userRegCount > CMDQ_MAX_DUMP_REG_COUNT)
+		return -EINVAL;
 	totalRegCount = kernelRegCount + userRegCount;
 
 	if (0 == totalRegCount) {
@@ -411,7 +428,7 @@ static long cmdq_driver_process_command_request(struct cmdqCommandStruct *pComma
 	    || (CMDQ_SCENARIO_USER_MDP == pCommand->scenario)) {
 		CMDQ_VERBOSE("user space request, scenario:%d\n", pCommand->scenario);
 	} else {
-		CMDQ_LOG("[WARNING]fix user space request to CMDQ_SCENARIO_USER_SPACE\n");
+		CMDQ_VERBOSE("[WARNING]fix user space request to CMDQ_SCENARIO_USER_SPACE\n");
 		pCommand->scenario = CMDQ_SCENARIO_USER_SPACE;
 	}
 
@@ -576,7 +593,7 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		    || (CMDQ_SCENARIO_USER_MDP == job.command.scenario)) {
 			CMDQ_VERBOSE("user space request, scenario:%d\n", job.command.scenario);
 		} else {
-			CMDQ_LOG("[WARNING]fix user space request to CMDQ_SCENARIO_USER_SPACE\n");
+			CMDQ_VERBOSE("[WARNING]fix user space request to CMDQ_SCENARIO_USER_SPACE\n");
 			job.command.scenario = CMDQ_SCENARIO_USER_SPACE;
 		}
 		status = cmdqCoreSubmitTaskAsync(&job.command, NULL, 0, &pTask);
