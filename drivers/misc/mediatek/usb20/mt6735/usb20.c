@@ -494,22 +494,19 @@ void do_connection_work(struct work_struct *data)
 	/* be aware this could not be used in non-sleep context */
 	usb_in = usb_cable_connected();
 
-	spin_lock_irqsave(&mtk_musb->lock, flags);
-
 	if (mtk_musb->is_host) {
 		DBG(0, "is host, return\n");
-		spin_unlock_irqrestore(&mtk_musb->lock, flags);
 		return;
 	}
 
 #ifdef CONFIG_MTK_UART_USB_SWITCH
 	if (usb_phy_check_in_uart_mode()) {
 		DBG(0, "in uart mode, return\n");
-		spin_unlock_irqrestore(&mtk_musb->lock, flags);
 		return;
 	}
 #endif
 
+	spin_lock_irqsave(&mtk_musb->lock, flags);
 	if (!mtk_musb->power && (usb_in == true)) {
 		/* enable usb */
 		if (!wake_lock_active(&mtk_musb->usb_lock)) {
@@ -724,6 +721,9 @@ void musb_platform_reset(struct musb *musb)
 	/* clear all DMA enable bit */
 	for (bit = 0; bit < MUSB_HSDMA_CHANNELS; bit++)
 		musb_writew(mbase, MUSB_HSDMA_CHANNEL_OFFSET(bit, MUSB_HSDMA_CONTROL), 0);
+
+	/* set DMA channel 0 burst mode to boost QMU speed */
+	musb_writel(musb->mregs, 0x204, musb_readl(musb->mregs, 0x204) | 0x600);
 
 	swrst = musb_readw(mbase, MUSB_SWRST);
 	swrst |= (MUSB_SWRST_DISUSBRESET | MUSB_SWRST_SWRST);
@@ -1023,7 +1023,7 @@ static ssize_t mt_usb_store_portmode(struct device *dev, struct device_attribute
 		DBG(0, "dev is null!!\n");
 		return count;
 	/* } else if (1 == sscanf(buf, "%d", &portmode)) { */
-	} else if (kstrtol(buf, 10, (long *)&portmode) == 0) {
+	} else if (kstrtouint(buf, 10, &portmode) == 0) {
 		DBG(0, "\nUSB Port mode: current => %d (port_mode), change to => %d (portmode)\n",
 		    port_mode, portmode);
 		if (portmode >= PORT_MODE_MAX)
@@ -1666,4 +1666,4 @@ static struct kernel_param_ops option_param_ops = {
 	.set = set_option,
 	.get = param_get_int,
 };
-module_param_cb(option, &option_param_ops, &option, 0644);
+module_param_cb(option, &option_param_ops, &option, 0400);

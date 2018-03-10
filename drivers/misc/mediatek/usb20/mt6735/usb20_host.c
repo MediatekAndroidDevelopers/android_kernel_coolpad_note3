@@ -48,14 +48,129 @@ static unsigned int drvvbus_pin_mode;
 static unsigned int drvvbus_if_config = 1;
 #endif
 
+static int usb_iddig_number;
 #if !defined(CONFIG_MTK_LEGACY)
 struct pinctrl *pinctrl;
 struct pinctrl_state *pinctrl_iddig;
 struct pinctrl_state *pinctrl_drvvbus;
 struct pinctrl_state *pinctrl_drvvbus_low;
 struct pinctrl_state *pinctrl_drvvbus_high;
+
+#ifdef CONFIG_USB_MTK_OTG_SWITCH
+static bool otg_switch_state;
+static bool otg_iddig_isr_enable;
+static struct pinctrl_state *pinctrl_iddig_init;
+static struct pinctrl_state *pinctrl_iddig_enable;
+static struct pinctrl_state *pinctrl_iddig_disable;
+static struct mutex otg_switch_mutex;
+
+static irqreturn_t mt_usb_ext_iddig_int(int irq, void *dev_id);
+static int mtk_musb_eint_iddig_irq_en(void);
+
+static ssize_t otg_mode_show(struct device *dev,
+				struct device_attribute *attr, char *buf);
+static ssize_t otg_mode_store(struct device *dev,
+				struct device_attribute *attr, const char *buf, size_t count);
+
+DEVICE_ATTR(otg_mode, 0664, otg_mode_show, otg_mode_store);
+
+static struct attribute *otg_attributes[] = {
+	&dev_attr_otg_mode.attr,
+	NULL
+};
+
+static const struct attribute_group otg_attr_group = {
+	.attrs = otg_attributes,
+};
+
+static ssize_t otg_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	if (!dev) {
+		dev_err(dev, "otg_mode_store no dev\n");
+		return 0;
+	}
+
+	return sprintf(buf, "%d\n", otg_switch_state);
+}
+
+static ssize_t otg_mode_store(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	unsigned int mode;
+
+	if (!dev) {
+		dev_err(dev, "otg_mode_store no dev\n");
+		return count;
+	}
+
+	mutex_lock(&otg_switch_mutex);
+
+	if (1 == sscanf(buf, "%ud", &mode)) {
+		if (mode == 0) {
+			pr_info("otg_mode_disable start\n");
+
+			if (otg_switch_state == true) {
+
+				if (otg_iddig_isr_enable) {
+
+					pr_info("%s - disable_irq - is_host_active %d, is_active %d\n",
+						__func__, is_host_active(mtk_musb),	mtk_musb->is_active);
+
+					disable_irq(usb_iddig_number);
+					free_irq(usb_iddig_number, NULL);
+					otg_iddig_isr_enable = false;
+					if (is_host_active(mtk_musb))
+						schedule_delayed_work(&mtk_musb->id_pin_work, HZ/1000);
+				}
+
+				if (!IS_ERR(pinctrl_iddig_disable))
+					pinctrl_select_state(pinctrl, pinctrl_iddig_disable);
+
+				otg_switch_state = false;
+			}
+			pr_debug("otg_mode_disable end\n");
+		} else {
+			pr_debug("otg_mode_enable start\n");
+
+			if (otg_switch_state == false) {
+
+				otg_switch_state = true;
+
+				if (!IS_ERR(pinctrl_iddig_enable))
+					pinctrl_select_state(pinctrl, pinctrl_iddig_enable);
+
+				msleep(200);
+				pr_info("%s - enable_irq\n", __func__);
+				mtk_musb_eint_iddig_irq_en();
+			}
+			pr_debug("otg_mode_enable end\n");
+		}
+	}
+	mutex_unlock(&otg_switch_mutex);
+	return count;
+}
+
+static int mtk_musb_eint_iddig_irq_en(void)
+{
+	int retval = 0;
+
+	pr_info("%s - otg_iddig_isr_enable %d\n", __func__, otg_iddig_isr_enable);
+	if (!otg_iddig_isr_enable) {
+		retval = request_irq(usb_iddig_number, mt_usb_ext_iddig_int, IRQF_TRIGGER_LOW, "USB_IDDIG", NULL);
+
+		if (retval != 0) {
+			pr_notice("request_irq fail, ret %d, irqnum %d!!!\n", retval,
+					 usb_iddig_number);
+		} else {
+			otg_iddig_isr_enable = true;
+			enable_irq_wake(usb_iddig_number);
+		}
+	} else
+		switch_int_to_host(mtk_musb);  /* restore ID pin interrupt */
+	return retval;
+}
 #endif
-static int usb_iddig_number;
+#endif
 static ktime_t ktime_start, ktime_end;
 
 static struct musb_fifo_cfg fifo_cfg_host[] = {
@@ -77,12 +192,12 @@ static struct musb_fifo_cfg fifo_cfg_host[] = {
 { .hw_ep_num =	8, .style = MUSB_FIFO_RX,   .maxpacket = 64,  .mode = MUSB_BUF_SINGLE},
 };
 
-u32 delay_time = 15;
-module_param(delay_time, int, 0644);
-u32 delay_time1 = 55;
-module_param(delay_time1, int, 0644);
-u32 iddig_cnt = 0;
-module_param(iddig_cnt, int, 0644);
+int delay_time = 15;
+module_param(delay_time, int, 0400);
+int delay_time1 = 55;
+module_param(delay_time1, int, 0400);
+int iddig_cnt = 0;
+module_param(iddig_cnt, int, 0400);
 
 void mt_usb_set_vbus(struct musb *musb, int is_on)
 {
@@ -214,11 +329,11 @@ void mt_usb_init_drvvbus(void)
 }
 
 #if defined(CONFIG_USBIF_COMPLIANCE)
-u32 sw_deboun_time = 1;
+int sw_deboun_time = 1;
 #else
-u32 sw_deboun_time = 400;
+int sw_deboun_time = 400;
 #endif
-module_param(sw_deboun_time, int, 0644);
+module_param(sw_deboun_time, int, 0400);
 struct switch_dev otg_state;
 
 static bool musb_is_host(void)
@@ -273,6 +388,17 @@ static bool musb_is_host(void)
 		usb_is_host = false;
 	} else {
 		usb_is_host = true;
+#if defined(CONFIG_USB_MTK_OTG_SWITCH)
+		pr_info("%s - otg_iddig_isr_enable %d, otg_switch_state %d, usb_is_host %d\n", __func__,
+				otg_iddig_isr_enable, otg_switch_state, usb_is_host);
+		if (!otg_iddig_isr_enable) {
+			#ifndef FPGA_PLATFORM
+					DBG(0, "will unmask PMIC charger detection\n");
+					pmic_chrdet_int_en(1);
+			#endif
+			usb_is_host = false;
+		}
+#endif
 	}
 
 	DBG(0, "usb_is_host = %d\n", usb_is_host);
@@ -299,15 +425,15 @@ void musb_session_restart(struct musb *musb)
 
 static struct delayed_work host_plug_test_work;
 int host_plug_test_enable; /* default disable */
-module_param(host_plug_test_enable, int, 0644);
+module_param(host_plug_test_enable, int, 0400);
 int host_plug_in_test_period_ms = 5000;
-module_param(host_plug_in_test_period_ms, int, 0644);
+module_param(host_plug_in_test_period_ms, int, 0400);
 int host_plug_out_test_period_ms = 5000;
-module_param(host_plug_out_test_period_ms, int, 0644);
+module_param(host_plug_out_test_period_ms, int, 0400);
 int host_test_vbus_off_time_us = 3000;
-module_param(host_test_vbus_off_time_us, int, 0644);
+module_param(host_test_vbus_off_time_us, int, 0400);
 int host_test_vbus_only = 1;
-module_param(host_test_vbus_only, int, 0644);
+module_param(host_test_vbus_only, int, 0400);
 static int host_plug_test_triggered;
 void switch_int_to_device(struct musb *musb)
 {
@@ -613,6 +739,7 @@ static void otg_int_init(void)
 	#else
 	pr_debug("****%s:%d before Init IDDIG KS!!!!!\n", __func__, __LINE__);
 
+#if !defined(CONFIG_USB_MTK_OTG_SWITCH)
 	pinctrl_iddig = pinctrl_lookup_state(pinctrl, "iddig_irq_init");
 	if (IS_ERR(pinctrl_iddig)) {
 		ret = PTR_ERR(pinctrl_iddig);
@@ -620,6 +747,31 @@ static void otg_int_init(void)
 	}
 
 	pinctrl_select_state(pinctrl, pinctrl_iddig);
+#else
+	pinctrl_iddig_init = pinctrl_lookup_state(pinctrl, "iddig_init");
+	if (IS_ERR(pinctrl_iddig_init))
+		pr_err("Cannot find usb pinctrl iddig_init\n");
+	else
+		pinctrl_select_state(pinctrl, pinctrl_iddig_init);
+
+	pinctrl_iddig_enable = pinctrl_lookup_state(pinctrl, "iddig_enable");
+	pinctrl_iddig_disable = pinctrl_lookup_state(pinctrl, "iddig_disable");
+	if (IS_ERR(pinctrl_iddig_enable))
+		pr_err("Cannot find usb pinctrl iddig_enable\n");
+
+	if (IS_ERR(pinctrl_iddig_disable))
+		pr_err("Cannot find usb pinctrl iddig_disable\n");
+	else
+		pinctrl_select_state(pinctrl, pinctrl_iddig_disable);
+#ifdef CONFIG_SYSFS
+	ret = sysfs_create_group(&mtk_musb->controller->kobj, &otg_attr_group);
+	if (ret < 0) {
+		pr_err("Cannot register USB bus sysfs attributes: %d\n",
+			ret);
+	}
+#endif
+	mutex_init(&otg_switch_mutex);
+#endif
 
 	pr_debug("****%s:%d end Init IDDIG KS!!!!!\n", __func__, __LINE__);
 	#endif
@@ -639,7 +791,9 @@ static void otg_int_init(void)
 	/*gpio_request(iddig_pin, "USB_IDDIG");*/
 	gpio_set_debounce(iddig_pin, 64000);
 	usb_iddig_number = mt_gpio_to_irq(iddig_pin);
+	#if !defined(CONFIG_USB_MTK_OTG_SWITCH)
 	ret = request_irq(usb_iddig_number, mt_usb_ext_iddig_int, IRQF_TRIGGER_LOW, "USB_IDDIG", NULL);
+	#endif
 	#endif
 	if (ret > 0)
 		pr_err("USB IDDIG IRQ LINE not available!!\n");
