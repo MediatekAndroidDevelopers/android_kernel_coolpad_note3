@@ -1641,6 +1641,7 @@ struct super_operations {
 #define S_NOSEC		4096	/* no suid or xattr security attributes */
 #define S_ATOMIC_COPY	8192	/* Pages mapped with this inode need to be
 				   atomically copied (gem) */
+#define S_ENCRYPTED	16384	/* Encrypted file (using fs/crypto/) */
 
 /*
  * Note that nosuid etc flags are inode-specific: setting some file-system
@@ -1678,6 +1679,7 @@ struct super_operations {
 #define IS_IMA(inode)		((inode)->i_flags & S_IMA)
 #define IS_AUTOMOUNT(inode)	((inode)->i_flags & S_AUTOMOUNT)
 #define IS_NOSEC(inode)		((inode)->i_flags & S_NOSEC)
+#define IS_ENCRYPTED(inode)	((inode)->i_flags & S_ENCRYPTED)
 
 #define IS_WHITEOUT(inode)	(S_ISCHR(inode->i_mode) && \
 				 (inode)->i_rdev == WHITEOUT_DEV)
@@ -2884,5 +2886,7 @@ static inline bool is_sidechannel_device(const struct inode *inode)
 	umode_t mode = inode->i_mode;
 	return ((S_ISCHR(mode) || S_ISBLK(mode)) && (mode & (S_IROTH | S_IWOTH)));
 }
+
+extern void inode_nohighmem(struct inode *inode);
 
 #endif /* _LINUX_FS_H */

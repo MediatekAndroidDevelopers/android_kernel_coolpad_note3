@@ -68,8 +68,8 @@
 		} \
 	} } while (0)
 
-extern unsigned musb_debug;
-extern unsigned musb_uart_debug;
+extern int musb_debug;
+extern int musb_uart_debug;
 
 static inline int _dbg_level(unsigned level)
 {
