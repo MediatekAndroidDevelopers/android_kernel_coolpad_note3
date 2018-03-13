@@ -1,9 +1,0 @@
-#
-# zyt_peripherals configuration
-#
-config ZYT_PERIPHERALS
-           tristate "ZYT Pheripherals Driver"
-           default y
-           help
-           This is the zyt pheripherals driver.
-

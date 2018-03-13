@@ -11,7 +11,6 @@ obj-y				+= bus/
 obj-$(CONFIG_GENERIC_PHY)	+= phy/
 
 # GPIO must come after pinctrl as gpios may need to mux pins etc
-obj-y				+= peripherals/
 obj-y				+= pinctrl/
 obj-y				+= gpio/
 obj-y				+= pwm/
